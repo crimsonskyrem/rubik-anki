@@ -1,0 +1,9 @@
+{
+  "appId": "com.rubik.anki",
+  "appName": "Rubik Anki",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}
