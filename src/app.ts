@@ -1,52 +1,124 @@
-import { Cube, parseAlgorithm } from './cube/Cube';
-import { CubeRenderer } from './cube/renderer';
+import * as THREE from 'three';
+import { SquareRenderer } from './cube/SquareRenderer';
+import { Rotator, hitToFace } from './cube/Rotator';
 import { OrbitController } from './interaction/OrbitController';
 import { buildFormulaPanel } from './ui/FormulaPanel';
 import { getAllFormulas } from './cfop/data';
 import type { Formula } from './cfop/types';
 
-let renderer: CubeRenderer;
-let cube: Cube;
-let applyQueue: Array<[number, number]> = [];
-let isPlaying = false;
+// ═══ State ═══
+
+let renderer: SquareRenderer;
+let rotator: Rotator;
+let container: HTMLElement;
+
+/** Formula animation queue: pending moves to animate */
+interface QueuedMove { normal: THREE.Vector3; dir: 1 | -1 }
+let moveQueue: QueuedMove[] = [];
+let pendingFormula: Formula | null = null;
+
+// ═══ Init ═══
 
 export function initApp(): void {
-  cube = new Cube();
+  container = document.getElementById('cube-container')!;
+  renderer = new SquareRenderer(container);
+  rotator = new Rotator(renderer.squares);
 
-  const container = document.getElementById('cube-container')!;
-  renderer = new CubeRenderer(container);
-  new OrbitController(renderer);
+  const controller = new OrbitController(renderer);
+  controller.onClick((e: MouseEvent) => handleClick(e));
 
-  renderer.syncFromCube(cube);
-
+  // Formula panel
   const panelContainer = document.getElementById('panel-container')!;
   const formulas = getAllFormulas();
   buildFormulaPanel(panelContainer, formulas, (formula: Formula) => {
     applyFormula(formula);
   });
 
+  // Animation loop
   function animate(): void {
     requestAnimationFrame(animate);
-    // Process animation queue
-    if (!renderer.isAnimating && applyQueue.length > 0) {
-      const [face, dir] = applyQueue.shift()!;
-      renderer.animateMove(face, dir as 1 | -1 | 2, cube);
+
+    // Process rotation animation
+    rotator.update();
+
+    // Process formula move queue
+    if (!rotator.isRotating && moveQueue.length > 0) {
+      const move = moveQueue.shift()!;
+      rotator.startRotation(move.normal, move.dir, () => {
+        // After each move: if queue empty & pending formula, apply it
+        if (moveQueue.length === 0 && pendingFormula) {
+          const f = pendingFormula;
+          pendingFormula = null;
+          applyFormulaNow(f);
+        }
+      });
     }
-    if (applyQueue.length === 0 && isPlaying) {
-      isPlaying = false;
-    }
+
     renderer.render();
   }
   animate();
 }
 
-function applyFormula(formula: Formula): void {
-  // Reset cube to solved state and show it
-  cube.reset();
-  // Snap cubies back to grid positions
-  renderer.syncFromCube(cube);
+// ═══ Click-to-rotate ═══
 
-  // Build the pattern by applying inverse algorithm
-  cube.applyAlgorithm(formula.inverse);
-  renderer.syncFromCube(cube);
+function handleClick(e: MouseEvent): void {
+  if (rotator.isRotating) return;
+
+  const square = renderer.getIntersection(e.clientX, e.clientY, container);
+  if (!square) return;
+
+  const { normal, dir } = hitToFace(square);
+  rotator.startRotation(normal, dir);
+}
+
+// ═══ Formula animation ═══
+
+/** Map move letter to face normal in Cube local space */
+const MOVE_TO_NORMAL: Record<string, THREE.Vector3> = {
+  U: new THREE.Vector3(0, 1, 0),
+  D: new THREE.Vector3(0, -1, 0),
+  R: new THREE.Vector3(1, 0, 0),
+  L: new THREE.Vector3(-1, 0, 0),
+  F: new THREE.Vector3(0, 0, 1),
+  B: new THREE.Vector3(0, 0, -1),
+};
+
+function parseAlgorithm(alg: string): QueuedMove[] {
+  const result: QueuedMove[] = [];
+  const tokens = alg.trim().split(/\s+/);
+  for (const token of tokens) {
+    if (!token) continue;
+    const match = token.match(/^([URFDLB])([']|2)?$/i);
+    if (!match) continue;
+    const normal = MOVE_TO_NORMAL[match[1].toUpperCase()];
+    if (!normal) continue;
+    const suffix = match[2] || '';
+    if (suffix === '2') {
+      result.push({ normal: normal.clone(), dir: 1 });
+      result.push({ normal: normal.clone(), dir: 1 });
+    } else {
+      result.push({ normal: normal.clone(), dir: suffix === "'" ? -1 : 1 });
+    }
+  }
+  return result;
+}
+
+function applyFormula(formula: Formula): void {
+  moveQueue = [];
+
+  if (rotator.isRotating) {
+    pendingFormula = formula;
+    return;
+  }
+
+  applyFormulaNow(formula);
+}
+
+function applyFormulaNow(formula: Formula): void {
+  renderer.resetToSolved();
+
+  const moves = parseAlgorithm(formula.inverse);
+  for (const m of moves) {
+    moveQueue.push(m);
+  }
 }

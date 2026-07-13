@@ -1,4 +1,4 @@
-import { inverseAlgorithm } from '../cube/Cube';
+import { inverseAlgorithm } from '../cube/algorithm';
 import type { Formula } from './types';
 
 function f(

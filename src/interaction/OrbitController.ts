@@ -1,25 +1,36 @@
 import * as THREE from 'three';
-import { CubeRenderer } from '../cube/renderer';
+
+interface RendererLike {
+  camera: THREE.PerspectiveCamera;
+  renderer: THREE.WebGLRenderer;
+}
 
 /**
- * Simple orbit controller: drag to rotate, scroll to zoom.
+ * Orbit controller: drag to rotate, scroll to zoom, click to interact.
+ * Distinguishes click from drag via movement threshold.
  */
 export class OrbitController {
-  private renderer: CubeRenderer;
+  private renderer: RendererLike;
   private isDragging = false;
+  private isClick = false;
+  private startX = 0;
+  private startY = 0;
   private lastX = 0;
   private lastY = 0;
   private spherical = { theta: Math.PI / 4, phi: Math.PI / 3, radius: 8.5 };
+  private onClickCallback: ((e: MouseEvent) => void) | null = null;
 
-  constructor(renderer: CubeRenderer) {
+  private static readonly CLICK_THRESHOLD = 3; // px — max movement to count as click
+
+  constructor(renderer: RendererLike) {
     this.renderer = renderer;
     const canvas = renderer.renderer.domElement;
 
     // Mouse events
     canvas.addEventListener('mousedown', (e: MouseEvent) => this._onPointerDown(e));
     canvas.addEventListener('mousemove', (e: MouseEvent) => this._onPointerMove(e));
-    canvas.addEventListener('mouseup', () => this._onPointerUp());
-    canvas.addEventListener('mouseleave', () => this._onPointerUp());
+    canvas.addEventListener('mouseup', (e: MouseEvent) => this._onPointerUp(e));
+    canvas.addEventListener('mouseleave', () => this._onCancel());
 
     // Touch events
     canvas.addEventListener('touchstart', (e: TouchEvent) => {
@@ -32,7 +43,11 @@ export class OrbitController {
         this._onPointerMove(e.touches[0]);
       }
     });
-    canvas.addEventListener('touchend', () => this._onPointerUp());
+    canvas.addEventListener('touchend', (e: TouchEvent) => {
+      // For touch, use last touch position
+      const fakeEvent = { clientX: this.lastX, clientY: this.lastY } as MouseEvent;
+      this._onPointerUp(fakeEvent);
+    });
 
     // Scroll zoom
     canvas.addEventListener('wheel', (e: WheelEvent) => {
@@ -44,8 +59,16 @@ export class OrbitController {
     this._updateCamera();
   }
 
+  /** Register a callback for clicks (not drags) on the canvas */
+  onClick(cb: (e: MouseEvent) => void): void {
+    this.onClickCallback = cb;
+  }
+
   private _onPointerDown(e: MouseEvent | Touch): void {
     this.isDragging = true;
+    this.isClick = true;
+    this.startX = e.clientX;
+    this.startY = e.clientY;
     this.lastX = e.clientX;
     this.lastY = e.clientY;
   }
@@ -57,13 +80,30 @@ export class OrbitController {
     this.lastX = e.clientX;
     this.lastY = e.clientY;
 
+    // Check if moved beyond click threshold
+    const totalDx = e.clientX - this.startX;
+    const totalDy = e.clientY - this.startY;
+    if (Math.abs(totalDx) > OrbitController.CLICK_THRESHOLD ||
+        Math.abs(totalDy) > OrbitController.CLICK_THRESHOLD) {
+      this.isClick = false;
+    }
+
     this.spherical.theta -= dx * 0.005;
     this.spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, this.spherical.phi - dy * 0.005));
     this._updateCamera();
   }
 
-  private _onPointerUp(): void {
+  private _onPointerUp(e: MouseEvent): void {
+    if (this.isClick && this.onClickCallback) {
+      this.onClickCallback(e);
+    }
     this.isDragging = false;
+    this.isClick = false;
+  }
+
+  private _onCancel(): void {
+    this.isDragging = false;
+    this.isClick = false;
   }
 
   private _updateCamera(): void {
