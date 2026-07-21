@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { StickerElement, createStickerElements, cloneElements } from './SquareData';
+import { StickerElement, createStickerElements } from './SquareData';
+import { solvedState, type StickerState } from './CubeState';
 
 /** A single sticker square: colored front + black backing, positioned in 3D space */
 export class SquareMesh extends THREE.Group {
@@ -76,7 +77,6 @@ export class SquareRenderer {
   // Animation state
   private _isAnimating = false;
   get isAnimating(): boolean { return this._isAnimating; }
-  private _initialElements: StickerElement[]; // saved solved state for reset
 
   constructor(container: HTMLElement) {
     // Scene
@@ -115,7 +115,6 @@ export class SquareRenderer {
 
     // Build squares
     const elements = createStickerElements();
-    this._initialElements = cloneElements(elements);
     for (const el of elements) {
       const sq = new SquareMesh(el);
       this.cubeGroup.add(sq);
@@ -129,19 +128,27 @@ export class SquareRenderer {
     window.addEventListener('resize', () => this._onResize(container));
   }
 
-  /** Reset all squares to solved state */
-  resetToSolved(): void {
-    const elements = createStickerElements();
-    this._initialElements = cloneElements(elements);
+  /**
+   * Write a pure StickerState[] into the meshes. Single view-sync point:
+   * the model is truth, the renderer renders it. Exact (no float drift)
+   * because the model uses integer 90° rotations.
+   */
+  sync(state: StickerState[]): void {
     for (let i = 0; i < this.squares.length; i++) {
-      this.squares[i].element.color = elements[i].color;
-      this.squares[i].element.pos.copy(elements[i].pos);
-      this.squares[i].element.normal.copy(elements[i].normal);
-      this.squares[i].syncFromElement();
-      // Update material color
-      const frontMesh = this.squares[i].children[0] as THREE.Mesh;
-      (frontMesh.material as THREE.MeshStandardMaterial).color.set(elements[i].color);
+      const sq = this.squares[i];
+      const s = state[i];
+      sq.element.color = s.color;
+      sq.element.pos.set(s.pos.x, s.pos.y, s.pos.z);
+      sq.element.normal.set(s.normal.x, s.normal.y, s.normal.z);
+      sq.syncFromElement();
+      const frontMesh = sq.children[0] as THREE.Mesh;
+      (frontMesh.material as THREE.MeshStandardMaterial).color.set(s.color);
     }
+  }
+
+  /** Reset all squares to solved state (delegates to sync over the solved model). */
+  resetToSolved(): void {
+    this.sync(solvedState());
   }
 
   /** Cast a ray and return the closest square hit */

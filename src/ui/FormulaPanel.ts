@@ -1,13 +1,28 @@
 import type { Formula } from '../cfop/types';
 
+/** Callbacks the panel fires into the app. */
+export interface PanelHandlers {
+  /** A formula was selected: snap to its pattern (and auto-play if enabled). */
+  onSelect: (formula: Formula) => void;
+  /** The auto-play toggle changed. `next` is the new state (true = auto). */
+  onToggleAutoPlay: (next: boolean) => void;
+  /** The algorithm display was clicked: advance one step (manual mode). */
+  onStep: () => void;
+}
+
 /**
  * Build the formula selection panel in the given container.
+ *
+ * Layout (top to bottom): title, category tabs, control row
+ * (auto-play toggle + clickable algorithm display), formula list.
  */
 export function buildFormulaPanel(
   container: HTMLElement,
   formulas: Formula[],
-  onSelect: (formula: Formula) => void,
+  handlers: PanelHandlers,
 ): void {
+  const { onSelect, onToggleAutoPlay, onStep } = handlers;
+
   const categories: Array<{ key: Formula['category']; label: string }> = [
     { key: 'cross', label: 'Cross' },
     { key: 'f2l', label: 'F2L' },
@@ -16,6 +31,8 @@ export function buildFormulaPanel(
   ];
 
   let activeCategory: Formula['category'] = 'cross';
+  let autoPlay = true; // default ON (preserve existing auto-play behavior)
+  let currentAlgorithm = '';
 
   // Title
   const title = document.createElement('h2');
@@ -25,22 +42,68 @@ export function buildFormulaPanel(
 
   // Tab bar
   const tabBar = document.createElement('div');
-  tabBar.style.cssText = 'display: flex; gap: 4px; margin-bottom: 16px;';
+  tabBar.style.cssText = 'display: flex; gap: 4px; margin-bottom: 12px;';
   container.appendChild(tabBar);
+
+  // Control row: auto-play toggle + algorithm display (above the list)
+  const controlRow = document.createElement('div');
+  controlRow.style.cssText = 'display: flex; gap: 8px; margin-bottom: 16px; align-items: stretch;';
+  container.appendChild(controlRow);
+
+  // Auto-play toggle
+  const autoPlayBtn = document.createElement('button');
+  function renderAutoPlayBtn(): void {
+    autoPlayBtn.textContent = autoPlay ? '自动播放：开' : '自动播放：关';
+    autoPlayBtn.style.cssText = `
+      padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer;
+      font-size: 13px; font-weight: 600; transition: background 0.2s; white-space: nowrap;
+      background: ${autoPlay ? '#e94560' : '#0f3460'};
+      color: ${autoPlay ? '#fff' : '#aaa'};
+    `;
+  }
+  renderAutoPlayBtn();
+  autoPlayBtn.addEventListener('click', () => {
+    autoPlay = !autoPlay;
+    renderAutoPlayBtn();
+    onToggleAutoPlay(autoPlay);
+    updateAlgDisplay();
+  });
+  controlRow.appendChild(autoPlayBtn);
+
+  // Algorithm display (clickable: advances one step in manual mode)
+  const algDisplay = document.createElement('div');
+  algDisplay.id = 'algorithm-display';
+  algDisplay.style.cssText = `
+    flex: 1; padding: 10px 12px; background: #0f3460; border-radius: 6px;
+    font-family: monospace; font-size: 15px; text-align: center; min-height: 44px;
+    cursor: pointer; transition: background 0.15s;
+    display: flex; align-items: center; justify-content: center;
+  `;
+  algDisplay.textContent = '选择一个公式开始';
+  algDisplay.addEventListener('click', () => onStep());
+  algDisplay.addEventListener('mouseenter', () => {
+    algDisplay.style.background = '#162d50';
+  });
+  algDisplay.addEventListener('mouseleave', () => {
+    algDisplay.style.background = '#0f3460';
+  });
+  controlRow.appendChild(algDisplay);
+
+  function updateAlgDisplay(): void {
+    if (!currentAlgorithm) {
+      algDisplay.textContent = '选择一个公式开始';
+      return;
+    }
+    algDisplay.textContent = autoPlay
+      ? currentAlgorithm
+      : `${currentAlgorithm}  （点击逐步执行）`;
+  }
 
   // Formula list
   const listContainer = document.createElement('div');
   listContainer.id = 'formula-list';
   listContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
   container.appendChild(listContainer);
-
-  // Algorithm display
-  const algDisplay = document.createElement('div');
-  algDisplay.id = 'algorithm-display';
-  algDisplay.style.cssText =
-    'margin-top: 16px; padding: 12px; background: #0f3460; border-radius: 8px; font-family: monospace; font-size: 16px; text-align: center; min-height: 48px;';
-  algDisplay.textContent = '选择一个公式开始';
-  container.appendChild(algDisplay);
 
   function renderTabs(): void {
     tabBar.innerHTML = '';
@@ -80,10 +143,9 @@ export function buildFormulaPanel(
         item.classList.add('selected');
         item.style.background = '#e94560';
 
-        // Update algorithm display
-        algDisplay.textContent = f.algorithm;
-
-        // Notify
+        // Update algorithm display + notify
+        currentAlgorithm = f.algorithm;
+        updateAlgDisplay();
         onSelect(f);
       });
 
@@ -102,7 +164,7 @@ export function buildFormulaPanel(
     }
   }
 
-  // Add selected class style
+  // Selected class style
   const style = document.createElement('style');
   style.textContent = '.selected { background: #e94560 !important; }';
   container.appendChild(style);

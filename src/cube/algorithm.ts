@@ -1,36 +1,48 @@
+// ═══════════════════════════════════════════════════════════════════
+//  Algorithm parsing & inversion (pure, no cube state, no Three.js).
+//  Owns the Move/Face types so the state model can import them.
+// ═══════════════════════════════════════════════════════════════════
+
+export type Face = 'U' | 'D' | 'R' | 'L' | 'F' | 'B';
+
+/** Move direction: 1 = CW, -1 = CCW, 2 = double (180°). */
+export type MoveDir = 1 | -1 | 2;
+
+export interface Move {
+  face: Face;
+  dir: MoveDir;
+}
+
 /**
- * Parse an algorithm string (e.g. "R U R' U'") into [faceIndex, direction] pairs.
- * Face indices: U=0, R=1, F=2, D=3, L=4, B=5.
- * Direction: 1=CW, -1=CCW, 2=double.
+ * Parse an algorithm string (e.g. "R U R' U2") into Move[].
+ * Tokens outside [URFDLB] with optional ' / 2 suffix are ignored.
  */
-export function parseAlgorithm(alg: string): Array<[number, number]> {
-  const faceMap: Record<string, number> = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
-  const result: Array<[number, number]> = [];
+export function parseAlgorithm(alg: string): Move[] {
+  const result: Move[] = [];
   const tokens = alg.trim().split(/\s+/);
   for (const token of tokens) {
     if (!token) continue;
     const match = token.match(/^([URFDLB])([']|2)?$/i);
     if (!match) continue;
-    const f = faceMap[match[1].toUpperCase()];
+    const face = match[1].toUpperCase() as Face;
     const suffix = match[2] || '';
-    const dir: 1 | -1 | 2 = suffix === "'" ? -1 : suffix === '2' ? 2 : 1;
-    result.push([f, dir]);
+    const dir: MoveDir = suffix === "'" ? -1 : suffix === '2' ? 2 : 1;
+    result.push({ face, dir });
   }
   return result;
 }
 
 /**
  * Return the inverse of an algorithm string.
- * E.g. "R U R'" → "R U' R'"
+ * E.g. "R U R'" -> "R U' R'".
  */
 export function inverseAlgorithm(alg: string): string {
   const moves = parseAlgorithm(alg);
-  const faceName = ['U', 'R', 'F', 'D', 'L', 'B'];
   const reversed: string[] = [];
   for (let i = moves.length - 1; i >= 0; i--) {
-    const [f, d] = moves[i];
-    const inv = d === 1 ? "'" : d === -1 ? '' : '2';
-    reversed.push(faceName[f] + inv);
+    const { face, dir } = moves[i];
+    const inv = dir === 1 ? "'" : dir === -1 ? '' : '2';
+    reversed.push(face + inv);
   }
   return reversed.join(' ');
 }

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { SquareMesh } from './SquareRenderer';
-import { roundToGrid } from './SquareData';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Face rotation axes — CW from outside, in Cube local space
@@ -119,7 +118,7 @@ export class Rotator {
   }
 
   private _finish(): void {
-    // Move squares back to parent (attach preserves world transform)
+    // Move squares back to parent (attach preserves world transform).
     for (const sq of this._activeSquares) {
       this.parentGroup.attach(sq);
     }
@@ -128,21 +127,12 @@ export class Rotator {
     this.parentGroup.remove(this._pivot!);
     this._pivot = null;
 
-    // Snap positions and normals to grid
-    for (const sq of this._activeSquares) {
-      sq.element.pos = roundToGrid(sq.position);
-      const n = new THREE.Vector3(0, 0, 1).applyQuaternion(sq.quaternion);
-      sq.element.normal = roundToGrid(n).normalize();
-      // Also snap the square itself (just in case)
-      sq.position.copy(sq.element.pos);
-      const snapQ = new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(0, 0, 1), sq.element.normal,
-      );
-      sq.quaternion.copy(snapQ);
-    }
-
     this._activeSquares = [];
     this._rotating = false;
+
+    // The caller's onComplete commits the exact state via the model
+    // (applyMove) + renderer.sync, which snaps each sticker's element
+    // and mesh to the exact 90° result. No snap-to-grid drift hack here.
     this._onComplete?.();
     this._onComplete = null;
   }

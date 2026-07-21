@@ -22,7 +22,7 @@ export type FaceColors = [string, string, string, string, string, string];
  */
 export function createStickerElements(
   order: number = 3,
-  colors: FaceColors = ['#ffffff', '#ffd500', '#ff5900', '#b90000', '#009b48', '#0045f6'],
+  colors: FaceColors = ['#ffd500', '#ffffff', '#ff5900', '#b90000', '#0045f6', '#009b48'],
 ): StickerElement[] {
   const elements: StickerElement[] = [];
   const size = 1;
