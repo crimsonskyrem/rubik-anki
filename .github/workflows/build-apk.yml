@@ -31,7 +31,11 @@ jobs:
 
       - name: Set version from tag
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="0.0.0"
+          fi
           echo "VERSION_NAME=$VERSION" >> $GITHUB_ENV
           echo "VERSION_CODE=$(echo $VERSION | tr -d '.')" >> $GITHUB_ENV
 
