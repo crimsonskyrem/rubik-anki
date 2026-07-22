@@ -23,7 +23,7 @@ let moveQueue: QueuedMove[] = [];
 let pendingFormula: Formula | null = null;
 
 /** Auto-play toggle. ON: animate the full solve after snapping. OFF: step manually. */
-let autoPlay = true;
+let autoPlay = false;
 
 /** Derive a face MoveBase from an outward normal (for click-to-rotate free play). */
 function baseFromNormal(normal: THREE.Vector3): MoveBase {
@@ -56,6 +56,57 @@ export function initApp(): void {
 
   const controller = new OrbitController(renderer);
   controller.onClick((e: MouseEvent) => handleClick(e));
+
+  // Reset/lock button (icon style, bottom-right of cube-container)
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = '⟳';
+  resetBtn.title = '点击重置镜头，再次点击锁定';
+  resetBtn.style.cssText = `
+    position: absolute; bottom: 16px; right: 16px; z-index: 10;
+    width: 40px; height: 40px; border: none; border-radius: 50%;
+    cursor: pointer; font-size: 20px; line-height: 1;
+    background: rgba(15, 52, 96, 0.7); color: #aaa;
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+    transition: background 0.2s, color 0.2s;
+  `;
+  let btnState: 0 | 1 | 2 = 0; // 0=default, 1=reset-pending, 2=locked
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  function setBtnStyle(background: string, color: string, title: string): void {
+    resetBtn.style.background = background;
+    resetBtn.style.color = color;
+    resetBtn.title = title;
+  }
+  resetBtn.addEventListener('click', () => {
+    if (btnState === 2) {
+      // Locked → unlock + reset
+      clearTimeout(pendingTimer!);
+      pendingTimer = null;
+      btnState = 0;
+      controller.setEnabled(true);
+      controller.reset();
+      setBtnStyle('rgba(15, 52, 96, 0.7)', '#aaa', '点击重置镜头，再次点击锁定');
+    } else if (btnState === 1) {
+      // Reset pending → lock
+      clearTimeout(pendingTimer!);
+      pendingTimer = null;
+      btnState = 2;
+      controller.setEnabled(false);
+      setBtnStyle('rgba(255, 89, 0, 0.7)', '#fff', '已锁定，点击解锁');
+    } else {
+      // Default → reset + start 1s pending
+      btnState = 1;
+      controller.reset();
+      controller.setEnabled(true);
+      setBtnStyle('rgba(233, 69, 96, 0.7)', '#fff', '再次点击锁定镜头');
+      pendingTimer = setTimeout(() => {
+        pendingTimer = null;
+        btnState = 0;
+        setBtnStyle('rgba(15, 52, 96, 0.7)', '#aaa', '点击重置镜头，再次点击锁定');
+      }, 1000);
+    }
+  });
+  container.appendChild(resetBtn);
 
   // Formula panel
   const panelContainer = document.getElementById('panel-container')!;

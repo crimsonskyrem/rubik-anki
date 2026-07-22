@@ -18,7 +18,9 @@ export class OrbitController {
   private lastX = 0;
   private lastY = 0;
   private spherical = { theta: Math.PI / 4, phi: Math.PI / 3, radius: 8.5 };
+  private readonly _initialSpherical = { ...this.spherical };
   private onClickCallback: ((e: MouseEvent) => void) | null = null;
+  private _enabled = true;
 
   private static readonly CLICK_THRESHOLD = 3; // px — max movement to count as click
 
@@ -51,6 +53,7 @@ export class OrbitController {
 
     // Scroll zoom
     canvas.addEventListener('wheel', (e: WheelEvent) => {
+      if (!this._enabled) return;
       e.preventDefault();
       this.spherical.radius = Math.max(4, Math.min(20, this.spherical.radius + e.deltaY * 0.01));
       this._updateCamera();
@@ -64,7 +67,23 @@ export class OrbitController {
     this.onClickCallback = cb;
   }
 
+  /** Reset camera to the initial view. */
+  reset(): void {
+    this.spherical = { ...this._initialSpherical };
+    this._updateCamera();
+  }
+
+  /** Enable or disable orbit/drag/zoom. */
+  setEnabled(enabled: boolean): void {
+    this._enabled = enabled;
+  }
+
+  get enabled(): boolean {
+    return this._enabled;
+  }
+
   private _onPointerDown(e: MouseEvent | Touch): void {
+    if (!this._enabled) return;
     this.isDragging = true;
     this.isClick = true;
     this.startX = e.clientX;

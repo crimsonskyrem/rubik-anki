@@ -31,29 +31,33 @@ export function buildFormulaPanel(
   ];
 
   let activeCategory: Formula['category'] = 'cross';
-  let autoPlay = true; // default ON (preserve existing auto-play behavior)
+  let autoPlay = false;
   let currentAlgorithm = '';
 
-  // Title
-  const title = document.createElement('h2');
-  title.textContent = 'CFOP 公式';
-  title.style.cssText = 'margin-bottom: 12px; font-size: 20px; color: #e94560;';
-  container.appendChild(title);
+  // Container flex layout: header fixed, list scrolls
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+  container.style.overflow = 'hidden';
+
+  // Sticky header: tabs + auto-play toggle + algorithm display
+  const header = document.createElement('div');
+  header.style.cssText = 'margin-bottom: 12px; flex-shrink: 0;';
+  container.appendChild(header);
 
   // Tab bar
   const tabBar = document.createElement('div');
-  tabBar.style.cssText = 'display: flex; gap: 4px; margin-bottom: 12px;';
-  container.appendChild(tabBar);
+  tabBar.style.cssText = 'display: flex; gap: 4px; margin-bottom: 8px;';
+  header.appendChild(tabBar);
 
-  // Control row: auto-play toggle + algorithm display (above the list)
+  // Control row
   const controlRow = document.createElement('div');
-  controlRow.style.cssText = 'display: flex; gap: 8px; margin-bottom: 16px; align-items: stretch;';
-  container.appendChild(controlRow);
+  controlRow.style.cssText = 'display: flex; gap: 8px; align-items: stretch;';
+  header.appendChild(controlRow);
 
   // Auto-play toggle
   const autoPlayBtn = document.createElement('button');
   function renderAutoPlayBtn(): void {
-    autoPlayBtn.textContent = autoPlay ? '自动播放：开' : '自动播放：关';
+    autoPlayBtn.textContent = '自动播放';
     autoPlayBtn.style.cssText = `
       padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer;
       font-size: 13px; font-weight: 600; transition: background 0.2s; white-space: nowrap;
@@ -99,10 +103,10 @@ export function buildFormulaPanel(
       : `${currentAlgorithm}  （点击逐步执行）`;
   }
 
-  // Formula list
+  // Formula list (scrollable)
   const listContainer = document.createElement('div');
   listContainer.id = 'formula-list';
-  listContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+  listContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px; flex: 1; overflow-y: auto; min-height: 0;';
   container.appendChild(listContainer);
 
   function renderTabs(): void {
@@ -138,12 +142,14 @@ export function buildFormulaPanel(
       item.title = f.description || f.algorithm;
 
       item.addEventListener('click', () => {
-        // Highlight selected
-        listContainer.querySelectorAll('.selected').forEach((el) => el.classList.remove('selected'));
+        // Deselect all others (clear inline background so CSS class takes over)
+        listContainer.querySelectorAll('.selected').forEach((el) => {
+          el.classList.remove('selected');
+          (el as HTMLElement).style.background = '';
+        });
+        // Select this one (background handled by .selected CSS rule)
         item.classList.add('selected');
-        item.style.background = '#e94560';
 
-        // Update algorithm display + notify
         currentAlgorithm = f.algorithm;
         updateAlgDisplay();
         onSelect(f);
