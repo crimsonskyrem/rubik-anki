@@ -3,14 +3,13 @@
 //
 //  Single source of truth for cube state. applyMove is a pure
 //  (state, move) -> state function using exact 90° cardinal rotations
-//  (integer math, no floating-point drift). The rotation axis/sign
-//  convention is ported verbatim from Rotator.FACE_AXES so that
-//  instant application and animated rotation agree exactly.
+//  (integer math, no floating-point drift). Supports 6 faces, wide
+//  r/l, and middle slice M via a unified MOVE_DEF table.
 // ═══════════════════════════════════════════════════════════════════
 
-import { parseAlgorithm, type Face, type Move } from './algorithm';
+import { parseAlgorithm, type MoveBase, type Move } from './algorithm';
 
-export type { Face, Move } from './algorithm';
+export type { MoveBase, Move } from './algorithm';
 
 export interface Vec3 {
   x: number;
@@ -24,31 +23,46 @@ export interface StickerState {
   normal: Vec3;
 }
 
-/** Sticker colors: U yellow, D white, L orange, R red, F blue, B green. */
-const COLORS: Record<Face, string> = {
-  U: '#ffd500',
-  D: '#ffffff',
-  L: '#ff5900',
-  R: '#b90000',
-  F: '#0045f6',
-  B: '#009b48',
+/** Face sticker colors (only the 6 outer faces carry color). */
+const FACE_COLORS: Record<'U' | 'D' | 'L' | 'R' | 'F' | 'B', string> = {
+  U: '#ffd500', // yellow
+  D: '#ffffff', // white
+  L: '#ff5900', // orange
+  R: '#b90000', // red
+  F: '#0045f6', // blue
+  B: '#009b48', // green
 };
 
+/** How a move base rotates the cube: axis + which coordinate the layers sit on + layer values. */
+export interface MoveDef {
+  axis: Vec3;
+  axisIdx: 'x' | 'y' | 'z';
+  layers: number[];
+}
+
 /**
- * Per-face geometry: outward normal + rotation axis.
- * Ported verbatim from Rotator.FACE_AXES + getRotationParams:
- *   dir === 1  -> +90° around `axis`
- *   dir === -1 -> -90° around `axis` (= 3 × +90°)
- *   dir === 2  -> 180° around `axis` (= 2 × +90°)
+ * Unified move table. Face entries use standard CW-from-outside notation
+ * (dir 1 = a quarter turn CW viewed from that face). Wide/slice compose
+ * consistently: r = R + M' (layers {0,1}), l = L + M (layers {-1,0}),
+ * M = middle slice, L direction (layer {0}).
  */
-const FACE_INFO: Record<Face, { normal: Vec3; axis: Vec3 }> = {
-  U: { normal: { x: 0, y: 1, z: 0 }, axis: { x: 0, y: 1, z: 0 } },
-  D: { normal: { x: 0, y: -1, z: 0 }, axis: { x: 0, y: 1, z: 0 } },
-  R: { normal: { x: 1, y: 0, z: 0 }, axis: { x: -1, y: 0, z: 0 } },
-  L: { normal: { x: -1, y: 0, z: 0 }, axis: { x: 1, y: 0, z: 0 } },
-  F: { normal: { x: 0, y: 0, z: 1 }, axis: { x: 0, y: 0, z: -1 } },
-  B: { normal: { x: 0, y: 0, z: -1 }, axis: { x: 0, y: 0, z: 1 } },
+const MOVE_DEF: Record<MoveBase, MoveDef> = {
+  U: { axis: { x: 0, y: -1, z: 0 }, axisIdx: 'y', layers: [1] },
+  D: { axis: { x: 0, y: 1, z: 0 }, axisIdx: 'y', layers: [-1] },
+  R: { axis: { x: -1, y: 0, z: 0 }, axisIdx: 'x', layers: [1] },
+  L: { axis: { x: 1, y: 0, z: 0 }, axisIdx: 'x', layers: [-1] },
+  F: { axis: { x: 0, y: 0, z: -1 }, axisIdx: 'z', layers: [1] },
+  B: { axis: { x: 0, y: 0, z: 1 }, axisIdx: 'z', layers: [-1] },
+  r: { axis: { x: -1, y: 0, z: 0 }, axisIdx: 'x', layers: [0, 1] },
+  l: { axis: { x: 1, y: 0, z: 0 }, axisIdx: 'x', layers: [-1, 0] },
+  M: { axis: { x: 1, y: 0, z: 0 }, axisIdx: 'x', layers: [0] },
+  x: { axis: { x: -1, y: 0, z: 0 }, axisIdx: 'x', layers: [-1, 0, 1] },
+  y: { axis: { x: 0, y: -1, z: 0 }, axisIdx: 'y', layers: [-1, 0, 1] },
 };
+
+export function getMoveDef(base: MoveBase): MoveDef {
+  return MOVE_DEF[base];
+}
 
 const ORDER = 3;
 const SIZE = 1;
@@ -87,44 +101,44 @@ function rotate90(v: Vec3, axis: Vec3): Vec3 {
   };
 }
 
-/** Build the 54 stickers of a solved cube (mirrors createStickerElements geometry). */
+/** Build the 54 stickers of a solved cube. */
 export function solvedState(): StickerState[] {
   const elements: StickerState[] = [];
 
-  // U face (+y) - white
+  // U face (+y) - yellow
   for (let x = -BORDER; x <= BORDER; x += SIZE) {
     for (let z = -BORDER; z <= BORDER; z += SIZE) {
-      elements.push({ color: COLORS.U, pos: { x, y: FACE_OFFSET, z }, normal: { x: 0, y: 1, z: 0 } });
+      elements.push({ color: FACE_COLORS.U, pos: { x, y: FACE_OFFSET, z }, normal: { x: 0, y: 1, z: 0 } });
     }
   }
-  // D face (-y) - yellow
+  // D face (-y) - white
   for (let x = -BORDER; x <= BORDER; x += SIZE) {
     for (let z = -BORDER; z <= BORDER; z += SIZE) {
-      elements.push({ color: COLORS.D, pos: { x, y: -FACE_OFFSET, z }, normal: { x: 0, y: -1, z: 0 } });
+      elements.push({ color: FACE_COLORS.D, pos: { x, y: -FACE_OFFSET, z }, normal: { x: 0, y: -1, z: 0 } });
     }
   }
   // L face (-x) - orange
   for (let y = -BORDER; y <= BORDER; y += SIZE) {
     for (let z = -BORDER; z <= BORDER; z += SIZE) {
-      elements.push({ color: COLORS.L, pos: { x: -FACE_OFFSET, y, z }, normal: { x: -1, y: 0, z: 0 } });
+      elements.push({ color: FACE_COLORS.L, pos: { x: -FACE_OFFSET, y, z }, normal: { x: -1, y: 0, z: 0 } });
     }
   }
   // R face (+x) - red
   for (let y = -BORDER; y <= BORDER; y += SIZE) {
     for (let z = -BORDER; z <= BORDER; z += SIZE) {
-      elements.push({ color: COLORS.R, pos: { x: FACE_OFFSET, y, z }, normal: { x: 1, y: 0, z: 0 } });
+      elements.push({ color: FACE_COLORS.R, pos: { x: FACE_OFFSET, y, z }, normal: { x: 1, y: 0, z: 0 } });
     }
   }
-  // F face (+z) - green
+  // F face (+z) - blue
   for (let x = -BORDER; x <= BORDER; x += SIZE) {
     for (let y = -BORDER; y <= BORDER; y += SIZE) {
-      elements.push({ color: COLORS.F, pos: { x, y, z: FACE_OFFSET }, normal: { x: 0, y: 0, z: 1 } });
+      elements.push({ color: FACE_COLORS.F, pos: { x, y, z: FACE_OFFSET }, normal: { x: 0, y: 0, z: 1 } });
     }
   }
-  // B face (-z) - blue
+  // B face (-z) - green
   for (let x = -BORDER; x <= BORDER; x += SIZE) {
     for (let y = -BORDER; y <= BORDER; y += SIZE) {
-      elements.push({ color: COLORS.B, pos: { x, y, z: -FACE_OFFSET }, normal: { x: 0, y: 0, z: -1 } });
+      elements.push({ color: FACE_COLORS.B, pos: { x, y, z: -FACE_OFFSET }, normal: { x: 0, y: 0, z: -1 } });
     }
   }
 
@@ -132,41 +146,29 @@ export function solvedState(): StickerState[] {
 }
 
 /**
- * True if a sticker belongs to the layer turned by `face`.
- * A sticker is in the layer when its cubie center (pos - 0.5·normal)
- * lies on the face plane: round(center[axis]) === faceNormal[axis].
- */
-function inLayer(s: StickerState, face: Face): boolean {
-  const n = FACE_INFO[face].normal;
-  const axis: 'x' | 'y' | 'z' = n.x !== 0 ? 'x' : n.y !== 0 ? 'y' : 'z';
-  const layerVal = n[axis];
-  const center: Vec3 = {
-    x: s.pos.x - 0.5 * s.normal.x,
-    y: s.pos.y - 0.5 * s.normal.y,
-    z: s.pos.z - 0.5 * s.normal.z,
-  };
-  return Math.round(center[axis]) === layerVal;
-}
-
-/**
  * Apply a move to a state, returning a NEW state (immutable).
- * Stickers in the turned layer have their pos/normal rotated by
- * (dir × 90°) around the face axis; all stickers are deep-cloned
- * so the result shares no references with the input.
+ * Stickers whose cubie center lies in one of the move's layers are
+ * rotated (dir × 90°) around the move axis; all stickers are deep-cloned.
  */
 export function applyMove(state: StickerState[], move: Move): StickerState[] {
-  const axis = FACE_INFO[move.face].axis;
+  const def = MOVE_DEF[move.base];
   const turns = move.dir === 1 ? 1 : move.dir === -1 ? 3 : 2;
+  const layerSet = new Set(def.layers);
 
   return state.map((s) => {
-    if (!inLayer(s, move.face)) {
+    const center: Vec3 = {
+      x: s.pos.x - 0.5 * s.normal.x,
+      y: s.pos.y - 0.5 * s.normal.y,
+      z: s.pos.z - 0.5 * s.normal.z,
+    };
+    if (!layerSet.has(Math.round(center[def.axisIdx]))) {
       return cloneSticker(s);
     }
     let pos = cloneVec(s.pos);
     let normal = cloneVec(s.normal);
     for (let i = 0; i < turns; i++) {
-      pos = rotate90(pos, axis);
-      normal = rotate90(normal, axis);
+      pos = rotate90(pos, def.axis);
+      normal = rotate90(normal, def.axis);
     }
     return { color: s.color, pos, normal };
   });

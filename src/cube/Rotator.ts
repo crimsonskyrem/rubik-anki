@@ -1,35 +1,23 @@
 import * as THREE from 'three';
 import { SquareMesh } from './SquareRenderer';
 
-// ═══════════════════════════════════════════════════════════════════
-//  Face rotation axes — CW from outside, in Cube local space
-// ═══════════════════════════════════════════════════════════════════
-
-const FACE_AXES: Record<string, THREE.Vector3> = {
-  '0,1,0':  new THREE.Vector3(0, 1, 0),   // U: right→back from top
-  '0,-1,0': new THREE.Vector3(0, 1, 0),   // D: right→back from bottom
-  '1,0,0':  new THREE.Vector3(-1, 0, 0),  // R: top→back from right
-  '-1,0,0': new THREE.Vector3(1, 0, 0),   // L: top→front from left
-  '0,0,1':  new THREE.Vector3(0, 0, -1),  // F: top→right from front
-  '0,0,-1': new THREE.Vector3(0, 0, 1),   // B: top→right from back
-};
-
 const RIGHT_ANGLE = Math.PI / 2;
 
-function getRotationParams(normal: THREE.Vector3, dir: 1 | -1) {
-  const key = `${Math.round(normal.x)},${Math.round(normal.y)},${Math.round(normal.z)}`;
-  const axis = FACE_AXES[key];
-  if (!axis) return null;
-  return { axis: axis.clone(), targetAngle: dir === 1 ? RIGHT_ANGLE : -RIGHT_ANGLE };
+/** Which coordinate a cardinal axis lives on. */
+function axisIndex(axis: THREE.Vector3): 'x' | 'y' | 'z' {
+  return Math.abs(axis.x) > 0 ? 'x' : Math.abs(axis.y) > 0 ? 'y' : 'z';
 }
 
-/** Cubie-center position: offset inward by 0.5 along the sticker normal */
+/** Cubie-center position: offset inward by 0.5 along the sticker normal. */
 function getTemPos(sq: SquareMesh): THREE.Vector3 {
   return sq.element.pos.clone().addScaledVector(sq.element.normal, -0.5);
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  Rotator — rotates an entire layer (21 stickers) via a pivot Group
+//  Rotator - rotates a set of layers via a pivot Group (view-only tween).
+//  Axis + layers + dir come from the model's MoveDef, so animation and
+//  instant application agree exactly. Truth is committed by the caller's
+//  onComplete (applyMove + renderer.sync).
 // ═══════════════════════════════════════════════════════════════════
 
 export class Rotator {
@@ -51,41 +39,28 @@ export class Rotator {
     this.parentGroup = squares[0].parent as THREE.Group;
   }
 
-  /** Begin rotating a face layer (21 stickers). */
-  startRotation(faceNormal: THREE.Vector3, dir: 1 | -1, onComplete?: () => void): boolean {
+  /** Begin rotating every sticker whose cubie center is in `layers` around `axis` by dir × 90°. */
+  startRotation(axis: THREE.Vector3, layers: number[], dir: 1 | -1, onComplete?: () => void): boolean {
     if (this._rotating) return false;
 
-    const params = getRotationParams(faceNormal, dir);
-    if (!params) return false;
-
-    // Select all stickers in the layer by cubie-center position.
-    // The layer is the set of stickers whose cubie center lies on
-    // the same plane perpendicular to the face normal.
-    const n = new THREE.Vector3(
-      Math.round(faceNormal.x), Math.round(faceNormal.y), Math.round(faceNormal.z),
-    );
-    const axisIdx = Math.abs(n.x) > 0 ? 'x' : Math.abs(n.y) > 0 ? 'y' : 'z';
-    const layerVal = n[axisIdx] as number; // 1 or -1
-
-    const activeSquares = this.squares.filter(sq => {
+    const axisIdx = axisIndex(axis);
+    const layerSet = new Set(layers);
+    const activeSquares = this.squares.filter((sq) => {
       const tp = getTemPos(sq);
-      return Math.round(tp[axisIdx]) === layerVal;
+      return layerSet.has(Math.round(tp[axisIdx]));
     });
+    if (activeSquares.length === 0) return false;
 
-    if (activeSquares.length !== 21) return false;
-
-    // Create pivot Group at origin
+    // Create pivot Group at origin and move active squares into it (attach preserves world transform).
     this._pivot = new THREE.Group();
     this.parentGroup.add(this._pivot);
-
-    // Move squares into pivot (attach preserves world transform)
     for (const sq of activeSquares) {
       this._pivot!.attach(sq);
     }
 
     this._activeSquares = activeSquares;
-    this._axis.copy(params.axis);
-    this._targetAngle = params.targetAngle;
+    this._axis.copy(axis).normalize();
+    this._targetAngle = dir === 1 ? RIGHT_ANGLE : -RIGHT_ANGLE;
     this._startTime = performance.now();
     this._rotating = true;
     this._onComplete = onComplete || null;
@@ -131,8 +106,7 @@ export class Rotator {
     this._rotating = false;
 
     // The caller's onComplete commits the exact state via the model
-    // (applyMove) + renderer.sync, which snaps each sticker's element
-    // and mesh to the exact 90° result. No snap-to-grid drift hack here.
+    // (applyMove) + renderer.sync. No snap-to-grid drift hack here.
     this._onComplete?.();
     this._onComplete = null;
   }

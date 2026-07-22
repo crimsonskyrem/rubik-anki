@@ -5,8 +5,8 @@ import { OrbitController } from './interaction/OrbitController';
 import { buildFormulaPanel } from './ui/FormulaPanel';
 import { getAllFormulas } from './cfop/data';
 import type { Formula } from './cfop/types';
-import { solvedState, applyMove, applyAlgorithm, type StickerState } from './cube/CubeState';
-import { parseAlgorithm, type Face, type Move } from './cube/algorithm';
+import { solvedState, applyMove, applyAlgorithm, getMoveDef, type StickerState } from './cube/CubeState';
+import { parseAlgorithm, type MoveBase, type Move } from './cube/algorithm';
 
 // ═══ State ═══
 
@@ -17,26 +17,16 @@ let container: HTMLElement;
 /** Single source of truth for the cube (immutable; reassigned on each move). */
 let state: StickerState[] = solvedState();
 
-/** A queued animated quarter-turn. dir 2 is split into two dir-1 turns. */
-interface QueuedMove { face: Face; dir: 1 | -1; normal: THREE.Vector3 }
+/** A queued animated quarter-turn (dir 2 is split into two dir-1 turns). */
+interface QueuedMove { move: { base: MoveBase; dir: 1 | -1 }; axis: THREE.Vector3; layers: number[] }
 let moveQueue: QueuedMove[] = [];
 let pendingFormula: Formula | null = null;
 
 /** Auto-play toggle. ON: animate the full solve after snapping. OFF: step manually. */
 let autoPlay = true;
 
-/** Face outward normal in Cube local space (view-layer adapter for the Rotator). */
-const MOVE_TO_NORMAL: Record<Face, THREE.Vector3> = {
-  U: new THREE.Vector3(0, 1, 0),
-  D: new THREE.Vector3(0, -1, 0),
-  R: new THREE.Vector3(1, 0, 0),
-  L: new THREE.Vector3(-1, 0, 0),
-  F: new THREE.Vector3(0, 0, 1),
-  B: new THREE.Vector3(0, 0, -1),
-};
-
-/** Derive a Face from an outward normal (inverse of MOVE_TO_NORMAL). */
-function faceFromNormal(normal: THREE.Vector3): Face {
+/** Derive a face MoveBase from an outward normal (for click-to-rotate free play). */
+function baseFromNormal(normal: THREE.Vector3): MoveBase {
   const x = Math.round(normal.x);
   const y = Math.round(normal.y);
   const z = Math.round(normal.z);
@@ -46,6 +36,12 @@ function faceFromNormal(normal: THREE.Vector3): Face {
   if (x === -1) return 'L';
   if (z === 1) return 'F';
   return 'B';
+}
+
+/** Build a THREE axis vector from a MoveBase's MoveDef axis. */
+function axisVec(base: MoveBase): THREE.Vector3 {
+  const a = getMoveDef(base).axis;
+  return new THREE.Vector3(a.x, a.y, a.z);
 }
 
 // ═══ Init ═══
@@ -94,9 +90,10 @@ function handleClick(e: MouseEvent): void {
   if (!square) return;
 
   const { normal, dir } = hitToFace(square);
-  const face = faceFromNormal(normal);
-  rotator.startRotation(normal, dir, () => {
-    state = applyMove(state, { face, dir });
+  const base = baseFromNormal(normal);
+  const move: Move = { base, dir };
+  rotator.startRotation(axisVec(base), getMoveDef(base).layers, dir, () => {
+    state = applyMove(state, move);
     renderer.sync(state);
   });
 }
@@ -106,10 +103,10 @@ function handleClick(e: MouseEvent): void {
 /** Play one queued move (animate + commit to model). No-op if rotating or queue empty. */
 function playNextMove(): void {
   if (rotator.isRotating || moveQueue.length === 0) return;
-  const move = moveQueue.shift()!;
-  rotator.startRotation(move.normal, move.dir, () => {
+  const q = moveQueue.shift()!;
+  rotator.startRotation(q.axis, q.layers, q.move.dir, () => {
     // Commit the move to the model, then sync the view (exact, drift-free).
-    state = applyMove(state, { face: move.face, dir: move.dir });
+    state = applyMove(state, q.move);
     renderer.sync(state);
     // After each move: if queue empty & pending formula, apply it
     if (moveQueue.length === 0 && pendingFormula) {
@@ -128,12 +125,13 @@ function step(): void {
 
 /** Split a Move into animated quarter-turns (dir 2 -> two dir-1 turns). */
 function enqueueMove(move: Move): void {
-  const normal = MOVE_TO_NORMAL[move.face];
+  const axis = axisVec(move.base);
+  const layers = getMoveDef(move.base).layers;
   if (move.dir === 2) {
-    moveQueue.push({ face: move.face, dir: 1, normal: normal.clone() });
-    moveQueue.push({ face: move.face, dir: 1, normal: normal.clone() });
+    moveQueue.push({ move: { base: move.base, dir: 1 }, axis: axis.clone(), layers });
+    moveQueue.push({ move: { base: move.base, dir: 1 }, axis: axis.clone(), layers });
   } else {
-    moveQueue.push({ face: move.face, dir: move.dir, normal: normal.clone() });
+    moveQueue.push({ move: { base: move.base, dir: move.dir }, axis, layers });
   }
 }
 
@@ -149,12 +147,8 @@ function applyFormula(formula: Formula): void {
 }
 
 function applyFormulaNow(formula: Formula): void {
-  // Snap to the pattern (the state this formula solves) with NO animation,
-  // then enqueue the solving algorithm. Auto-play drains it; manual mode
-  // waits for step() clicks. Either way: pattern -> solved.
   state = applyAlgorithm(solvedState(), formula.inverse);
   renderer.sync(state);
-
   for (const move of parseAlgorithm(formula.algorithm)) {
     enqueueMove(move);
   }

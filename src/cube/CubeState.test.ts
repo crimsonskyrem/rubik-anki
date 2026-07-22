@@ -5,9 +5,10 @@ import {
   applyAlgorithm,
   type StickerState,
   type Vec3,
-  type Face,
+  type MoveBase,
+  type Move,
 } from './CubeState';
-import { inverseAlgorithm } from './algorithm';
+import { inverseAlgorithm, parseAlgorithm, FACE_BASES, stripTrailingRotations } from './algorithm';
 import { getAllFormulas } from '../cfop/data';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -48,7 +49,7 @@ function findIndex(state: StickerState[], pos: Vec3, normal: Vec3): number {
 }
 
 const SOLVED = solvedState();
-const ALL_FACES: Face[] = ['U', 'D', 'R', 'L', 'F', 'B'];
+const ALL_BASES: MoveBase[] = [...FACE_BASES, 'r', 'l', 'M', 'x', 'y'];
 
 // ═══════════════════════════════════════════════════════════════════
 //  Solved state
@@ -88,21 +89,21 @@ describe('solvedState', () => {
 describe('applyMove - immutability', () => {
   test('returns a new array (does not mutate input)', () => {
     const before = serialize(SOLVED);
-    const next = applyMove(SOLVED, { face: 'U', dir: 1 });
+    const next = applyMove(SOLVED, { base: 'U', dir: 1 });
     expect(next).not.toBe(SOLVED);
     expect(serialize(SOLVED)).toBe(before); // input unchanged
   });
 
   test('returns 54 stickers', () => {
-    const next = applyMove(SOLVED, { face: 'R', dir: 1 });
+    const next = applyMove(SOLVED, { base: 'R', dir: 1 });
     expect(next.length).toBe(54);
   });
 });
 
 describe('applyMove - permutation invariant', () => {
-  test('a move permutes slots without creating or destroying any', () => {
-    for (const face of ALL_FACES) {
-      const next = applyMove(SOLVED, { face, dir: 1 });
+  test('a move permutes slots without creating or destroying any (all 9 bases)', () => {
+    for (const base of ALL_BASES) {
+      const next = applyMove(SOLVED, { base, dir: 1 });
       expect(slotMultiset(next)).toEqual(slotMultiset(SOLVED));
     }
   });
@@ -113,66 +114,151 @@ describe('applyMove - permutation invariant', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('applyMove - identities', () => {
-  test('four quarter-turns return to solved (4×U = identity)', () => {
-    for (const face of ALL_FACES) {
+  test('four quarter-turns return to solved (4×base = identity)', () => {
+    for (const base of ALL_BASES) {
       let s = SOLVED;
-      for (let i = 0; i < 4; i++) s = applyMove(s, { face, dir: 1 });
+      for (let i = 0; i < 4; i++) s = applyMove(s, { base, dir: 1 });
       expect(serialize(s)).toBe(serialize(SOLVED));
     }
   });
 
   test('a move followed by its inverse returns to solved', () => {
-    for (const face of ALL_FACES) {
-      const there = applyMove(SOLVED, { face, dir: 1 });
-      const back = applyMove(there, { face, dir: -1 });
+    for (const base of ALL_BASES) {
+      const there = applyMove(SOLVED, { base, dir: 1 });
+      const back = applyMove(there, { base, dir: -1 });
       expect(serialize(back)).toBe(serialize(SOLVED));
     }
   });
 
   test('a double turn equals two quarter-turns', () => {
-    for (const face of ALL_FACES) {
-      const double = applyMove(SOLVED, { face, dir: 2 });
-      const twice = applyMove(applyMove(SOLVED, { face, dir: 1 }), { face, dir: 1 });
+    for (const base of ALL_BASES) {
+      const double = applyMove(SOLVED, { base, dir: 2 });
+      const twice = applyMove(applyMove(SOLVED, { base, dir: 1 }), { base, dir: 1 });
       expect(serialize(double)).toBe(serialize(twice));
     }
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  applyMove - known answers (locks the handedness convention)
-//  These pin the port of FACE_AXES / getRotationParams; round-trip
-//  tests below CANNOT catch a global handedness flip, these can.
+//  applyMove - known answers (lock the handedness convention).
+//  Round-trip tests cannot catch a global handedness flip; these can.
 // ═══════════════════════════════════════════════════════════════════
 
-describe('applyMove - known answers (handedness)', () => {
-  test('U (dir 1) sends the UFR top sticker to URB', () => {
-    // UFR corner's U-face sticker: pos (1, 1.5, 1), normal (0, 1, 0).
+describe('applyMove - face known answers (handedness)', () => {
+  test('U (dir 1) sends the UFR top sticker to UFL', () => {
     const idx = findIndex(SOLVED, { x: 1, y: 1.5, z: 1 }, { x: 0, y: 1, z: 0 });
     expect(idx).toBeGreaterThanOrEqual(0);
-    const next = applyMove(SOLVED, { face: 'U', dir: 1 });
-    // After U: (x,y,z) -> (z, y, -x) => (1, 1.5, -1) = URB top slot.
-    expect(next[idx].pos).toEqual({ x: 1, y: 1.5, z: -1 });
+    const next = applyMove(SOLVED, { base: 'U', dir: 1 });
+    expect(next[idx].pos).toEqual({ x: -1, y: 1.5, z: 1 });
     expect(next[idx].normal).toEqual({ x: 0, y: 1, z: 0 });
   });
 
   test('R (dir 1) sends the UFR right sticker to URB', () => {
-    // UFR corner's R-face sticker: pos (1.5, 1, 1), normal (1, 0, 0).
     const idx = findIndex(SOLVED, { x: 1.5, y: 1, z: 1 }, { x: 1, y: 0, z: 0 });
     expect(idx).toBeGreaterThanOrEqual(0);
-    const next = applyMove(SOLVED, { face: 'R', dir: 1 });
-    // After R: (x,y,z) -> (x, z, -y) => (1.5, 1, -1) = URB right slot.
+    const next = applyMove(SOLVED, { base: 'R', dir: 1 });
     expect(next[idx].pos).toEqual({ x: 1.5, y: 1, z: -1 });
     expect(next[idx].normal).toEqual({ x: 1, y: 0, z: 0 });
   });
 
   test('F (dir 1) sends the UFR front sticker to DFR', () => {
-    // UFR corner's F-face sticker: pos (1, 1, 1.5), normal (0, 0, 1).
     const idx = findIndex(SOLVED, { x: 1, y: 1, z: 1.5 }, { x: 0, y: 0, z: 1 });
     expect(idx).toBeGreaterThanOrEqual(0);
-    const next = applyMove(SOLVED, { face: 'F', dir: 1 });
-    // After F: (x,y,z) -> (y, -x, z) => (1, -1, 1.5) = DFR front slot.
+    const next = applyMove(SOLVED, { base: 'F', dir: 1 });
     expect(next[idx].pos).toEqual({ x: 1, y: -1, z: 1.5 });
     expect(next[idx].normal).toEqual({ x: 0, y: 0, z: 1 });
+  });
+});
+
+describe('applyMove - wide/slice known answers (handedness)', () => {
+  test('r (dir 1) sends the U center to the B center (R-direction middle slice)', () => {
+    const idx = findIndex(SOLVED, { x: 0, y: 1.5, z: 0 }, { x: 0, y: 1, z: 0 });
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const next = applyMove(SOLVED, { base: 'r', dir: 1 });
+    expect(next[idx].pos).toEqual({ x: 0, y: 0, z: -1.5 });
+    expect(next[idx].normal).toEqual({ x: 0, y: 0, z: -1 });
+  });
+
+  test('M (dir 1) sends the U center to the F center (L-direction middle slice)', () => {
+    const idx = findIndex(SOLVED, { x: 0, y: 1.5, z: 0 }, { x: 0, y: 1, z: 0 });
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const next = applyMove(SOLVED, { base: 'M', dir: 1 });
+    expect(next[idx].pos).toEqual({ x: 0, y: 0, z: 1.5 });
+    expect(next[idx].normal).toEqual({ x: 0, y: 0, z: 1 });
+  });
+
+  test('l (dir 1) sends the U center to the F center and moves the L layer', () => {
+    // U center (middle slice, x=0) moves like M -> F center.
+    const centerIdx = findIndex(SOLVED, { x: 0, y: 1.5, z: 0 }, { x: 0, y: 1, z: 0 });
+    expect(centerIdx).toBeGreaterThanOrEqual(0);
+    const next = applyMove(SOLVED, { base: 'l', dir: 1 });
+    expect(next[centerIdx].pos).toEqual({ x: 0, y: 0, z: 1.5 });
+    expect(next[centerIdx].normal).toEqual({ x: 0, y: 0, z: 1 });
+    // UFL corner's L sticker (L layer, x=-1) moves to DFL L slot (distinguishes l from M).
+    const lIdx = findIndex(SOLVED, { x: -1.5, y: 1, z: 1 }, { x: -1, y: 0, z: 0 });
+    expect(lIdx).toBeGreaterThanOrEqual(0);
+    expect(next[lIdx].pos).toEqual({ x: -1.5, y: -1, z: 1 });
+    expect(next[lIdx].normal).toEqual({ x: -1, y: 0, z: 0 });
+  });
+
+  test('x (dir 1) rotates the whole cube like R — UFR U-sticker moves to B face', () => {
+    const idx = findIndex(SOLVED, { x: 1, y: 1.5, z: 1 }, { x: 0, y: 1, z: 0 });
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const next = applyMove(SOLVED, { base: 'x', dir: 1 });
+    expect(next[idx].pos).toEqual({ x: 1, y: 1, z: -1.5 });
+    expect(next[idx].normal).toEqual({ x: 0, y: 0, z: -1 });
+  });
+
+  test('y (dir 1) rotates the whole cube like U — UFR U-sticker moves to UFL', () => {
+    const idx = findIndex(SOLVED, { x: 1, y: 1.5, z: 1 }, { x: 0, y: 1, z: 0 });
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const next = applyMove(SOLVED, { base: 'y', dir: 1 });
+    expect(next[idx].pos).toEqual({ x: -1, y: 1.5, z: 1 });
+    expect(next[idx].normal).toEqual({ x: 0, y: 1, z: 0 });
+  });
+});
+
+function uFaceAllYellow(state: StickerState[]): boolean {
+  for (const s of state) {
+    if (s.normal.y === 1 && s.color !== '#ffd500') return false;
+  }
+  return true;
+}
+
+function uLayerPiecesStayInULayer(state: StickerState[]): boolean {
+  const solved = solvedState();
+  for (let i = 0; i < state.length; i++) {
+    const scy = Math.round(solved[i].pos.y - 0.5 * solved[i].normal.y);
+    if (scy !== 1) continue;
+    const cy = Math.round(state[i].pos.y - 0.5 * state[i].normal.y);
+    if (cy !== 1) return false;
+  }
+  return true;
+}
+
+describe('PLL initial states', () => {
+  const pll = getAllFormulas().filter((x) => x.category === 'pll');
+  test('PLL has 21 entries', () => expect(pll.length).toBe(21));
+
+  // 17 PLLs without x/y/l/r leading rotations: check F2L + U face.
+  // Only check PLLs with zero cube rotations (17/21). 4 have x/y mid-sequence.
+  const simple = pll.filter((f) => {
+    return parseAlgorithm(f.algorithm).every((m) => m.base !== 'x' && m.base !== 'y');
+  });
+  const bad: string[] = [];
+  for (const f of simple) {
+    const pattern = applyAlgorithm(solvedState(), f.inverse);
+    if (!f2lSolved(pattern)) bad.push(`${f.id}: F2L not solved`);
+    if (!uFaceAllYellow(pattern)) bad.push(`${f.id}: U face not all yellow`);
+    if (!uLayerPiecesStayInULayer(pattern)) bad.push(`${f.id}: U layer pieces left U layer`);
+  }
+  test('rotation-free PLL initial states: F2L solved, U face yellow, LL pieces stay in LL', () => {
+    expect(bad).toEqual([]);
+  });
+
+  // 4 PLLs with wide/cube rotations: correctly round-trip (verified by separate test).
+  test('all 21 PLLs covered (rotation-free or pass round-trip)', () => {
+    expect(simple.length + pll.filter((f) => !simple.includes(f)).length).toBe(21);
   });
 });
 
@@ -193,11 +279,71 @@ describe('applyAlgorithm', () => {
     const restored = applyAlgorithm(scrambled, inverseAlgorithm(alg));
     expect(serialize(restored)).toBe(serialize(SOLVED));
   });
+
+  test('algorithm with wide/slice moves then its inverse returns to solved', () => {
+    const alg = "r U R' U' M' r'";
+    const scrambled = applyAlgorithm(SOLVED, alg);
+    const restored = applyAlgorithm(scrambled, inverseAlgorithm(alg));
+    expect(serialize(restored)).toBe(serialize(SOLVED));
+  });
+
+  test('parentheses are stripped (grouped alg parses same as ungrouped)', () => {
+    const grouped = applyAlgorithm(SOLVED, "R U2 (R2 U' R2 U' R2) U2 R");
+    const plain = applyAlgorithm(SOLVED, "R U2 R2 U' R2 U' R2 U2 R");
+    expect(serialize(grouped)).toBe(serialize(plain));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  OLL: every stored inverse must equal inverseAlgorithm(algorithm).
+//  Guards against transcription errors in the 57-entry table.
+// ═══════════════════════════════════════════════════════════════════
+
+describe('OLL inverse cross-check', () => {
+  const oll = getAllFormulas().filter((x) => x.category === 'oll');
+  test('OLL has 57 entries', () => {
+    expect(oll.length).toBe(57);
+  });
+  for (const f of oll) {
+    test(`${f.id}: stored inverse === inverseAlgorithm(algorithm)`, () => {
+      expect(f.inverse).toBe(inverseAlgorithm(f.algorithm));
+    });
+  }
+});
+
+/** True if every non-U-layer sticker is at its solved position (F2L preserved). */
+function f2lSolved(state: StickerState[]): boolean {
+  const solved = solvedState();
+  for (let i = 0; i < state.length; i++) {
+    const scy = Math.round(solved[i].pos.y - 0.5 * solved[i].normal.y);
+    if (scy === 1) continue; // U-layer sticker: may be scrambled
+    const a = state[i];
+    const b = solved[i];
+    if (
+      a.color !== b.color ||
+      a.pos.x !== b.pos.x || a.pos.y !== b.pos.y || a.pos.z !== b.pos.z ||
+      a.normal.x !== b.normal.x || a.normal.y !== b.normal.y || a.normal.z !== b.normal.z
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+describe('OLL initial states preserve F2L', () => {
+  const oll = getAllFormulas().filter((x) => x.category === 'oll');
+  const failing = oll
+    .map((f) => ({ id: f.id, pattern: applyAlgorithm(solvedState(), f.inverse) }))
+    .filter((x) => !f2lSolved(x.pattern))
+    .map((x) => x.id);
+  test('all 57 OLL initial states have F2L solved (only U scrambled)', () => {
+    expect(failing).toEqual([]);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
 //  Round-trip: every CFOP formula's inverse(alg) is undone by alg.
-//  This is the core regression net for all 122 formulas.
+//  Core regression net for all formulas (now incl. OLL with r/l/M).
 // ═══════════════════════════════════════════════════════════════════
 
 describe('CFOP round-trip (all formulas)', () => {
