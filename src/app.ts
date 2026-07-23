@@ -3,6 +3,7 @@ import { SquareRenderer } from './cube/SquareRenderer';
 import { Rotator, hitToFace } from './cube/Rotator';
 import { OrbitController } from './interaction/OrbitController';
 import { buildFormulaPanel } from './ui/FormulaPanel';
+import { buildAnkiPanel, type AnkiHandlers } from './anki/AnkiPanel';
 import { getAllFormulas } from './cfop/data';
 import type { Formula } from './cfop/types';
 import { solvedState, applyMove, applyAlgorithm, getMoveDef, type StickerState } from './cube/CubeState';
@@ -24,6 +25,12 @@ let pendingFormula: Formula | null = null;
 
 /** Auto-play toggle. ON: animate the full solve after snapping. OFF: step manually. */
 let autoPlay = false;
+
+/** App mode: browse (original) or anki (memory practice). */
+let appMode: 'browse' | 'anki' = 'browse';
+
+/** Whether anki mode is active — used by the animation loop to drain move queue. */
+let ankiActive = false;
 
 /** Derive a face MoveBase from an outward normal (for click-to-rotate free play). */
 function baseFromNormal(normal: THREE.Vector3): MoveBase {
@@ -108,14 +115,93 @@ export function initApp(): void {
   });
   container.appendChild(resetBtn);
 
-  // Formula panel
+  // Panel
   const panelContainer = document.getElementById('panel-container')!;
+  panelContainer.style.display = 'flex';
+  panelContainer.style.flexDirection = 'column';
+  panelContainer.style.overflow = 'hidden';
   const formulas = getAllFormulas();
-  buildFormulaPanel(panelContainer, formulas, {
-    onSelect: (formula: Formula) => applyFormula(formula),
-    onToggleAutoPlay: (next: boolean) => { autoPlay = next; },
-    onStep: () => step(),
+
+  // Mode toggle bar (sticky top of panel)
+  const modeBar = document.createElement('div');
+  modeBar.style.cssText = 'display: flex; gap: 4px; margin-bottom: 12px;';
+  const browseTab = document.createElement('button');
+  const ankiTab = document.createElement('button');
+  function renderModeTabs(): void {
+    browseTab.textContent = '浏览';
+    browseTab.style.cssText = `
+      flex: 1; padding: 8px 4px; border: none; border-radius: 6px;
+      cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.2s;
+      background: ${appMode === 'browse' ? '#e94560' : '#0f3460'};
+      color: ${appMode === 'browse' ? '#fff' : '#aaa'};
+    `;
+    ankiTab.textContent = '记忆';
+    ankiTab.style.cssText = `
+      flex: 1; padding: 8px 4px; border: none; border-radius: 6px;
+      cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.2s;
+      background: ${appMode === 'anki' ? '#e94560' : '#0f3460'};
+      color: ${appMode === 'anki' ? '#fff' : '#aaa'};
+    `;
+  }
+  renderModeTabs();
+  browseTab.addEventListener('click', () => {
+    if (appMode === 'browse') return;
+    appMode = 'browse';
+    ankiActive = false;
+    renderModeTabs();
+    buildPanel();
   });
+  ankiTab.addEventListener('click', () => {
+    if (appMode === 'anki') return;
+    appMode = 'anki';
+    ankiActive = true;
+    renderModeTabs();
+    buildPanel();
+  });
+  modeBar.appendChild(browseTab);
+  modeBar.appendChild(ankiTab);
+  panelContainer.appendChild(modeBar);
+
+  // Panel content wrapper (below mode bar)
+  const panelContent = document.createElement('div');
+  panelContent.style.cssText = 'display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0;';
+  panelContainer.appendChild(panelContent);
+
+  function buildPanel(): void {
+    panelContent.innerHTML = '';
+    if (appMode === 'browse') {
+      buildFormulaPanel(panelContent, formulas, {
+        onSelect: (formula: Formula) => applyFormula(formula),
+        onToggleAutoPlay: (next: boolean) => { autoPlay = next; },
+        onStep: () => step(),
+      });
+    } else {
+      const ankiHandlers: AnkiHandlers = {
+        onPickFormula: (formula: Formula) => {
+          moveQueue = [];
+          state = applyAlgorithm(solvedState(), formula.inverse);
+          renderer.sync(state);
+        },
+        onCorrectMove: (move: Move) => {
+          enqueueMove(move);
+        },
+        onComplete: () => {
+          // panel handles UI feedback
+        },
+        onExit: () => {
+          appMode = 'browse';
+          ankiActive = false;
+          moveQueue = [];
+          state = solvedState();
+          renderer.sync(state);
+          renderModeTabs();
+          buildPanel();
+        },
+      };
+      buildAnkiPanel(panelContent, formulas, ankiHandlers);
+    }
+  }
+  buildPanel();
 
   // Animation loop
   function animate(): void {
@@ -124,8 +210,8 @@ export function initApp(): void {
     // Process rotation animation
     rotator.update();
 
-    // Auto-play drains the queue each frame; manual mode steps via step()
-    if (autoPlay) playNextMove();
+    // Auto-play drains the queue each frame; anki mode also drains it.
+    if (autoPlay || ankiActive) playNextMove();
 
     renderer.render();
   }
@@ -159,8 +245,8 @@ function playNextMove(): void {
     // Commit the move to the model, then sync the view (exact, drift-free).
     state = applyMove(state, q.move);
     renderer.sync(state);
-    // After each move: if queue empty & pending formula, apply it
-    if (moveQueue.length === 0 && pendingFormula) {
+    // After each move: if queue empty & pending formula, apply it (browse mode only)
+    if (moveQueue.length === 0 && pendingFormula && !ankiActive) {
       const f = pendingFormula;
       pendingFormula = null;
       applyFormulaNow(f);
