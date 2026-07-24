@@ -116,6 +116,38 @@ export function initApp(): void {
   });
   container.appendChild(resetBtn);
 
+  // Anki mode button
+  const ankiBtn = document.createElement('button');
+  ankiBtn.textContent = 'A';
+  ankiBtn.title = 'Anki 记忆模式';
+  ankiBtn.style.cssText = `
+    position: absolute; bottom: 16px; right: 64px; z-index: 10;
+    width: 40px; height: 40px; border: none; border-radius: 50%;
+    cursor: pointer; font-size: 16px; font-weight: 700; line-height: 1;
+    background: rgba(15, 52, 96, 0.7); color: #aaa;
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+    transition: background 0.2s, color 0.2s;
+  `;
+  ankiBtn.addEventListener('click', () => {
+    if (appMode === 'anki') {
+      appMode = 'browse';
+      ankiActive = false;
+      moveQueue = [];
+      state = solvedState();
+      renderer.sync(state);
+      ankiBtn.style.background = 'rgba(15, 52, 96, 0.7)';
+      ankiBtn.style.color = '#aaa';
+    } else {
+      appMode = 'anki';
+      ankiActive = true;
+      ankiBtn.style.background = 'rgba(233, 69, 96, 0.7)';
+      ankiBtn.style.color = '#fff';
+    }
+    buildPanel();
+  });
+  container.appendChild(ankiBtn);
+
   // Panel
   const panelContainer = document.getElementById('panel-container')!;
   panelContainer.style.display = 'flex';
@@ -123,47 +155,7 @@ export function initApp(): void {
   panelContainer.style.overflow = 'hidden';
   const formulas = getAllFormulas();
 
-  // Mode toggle bar (sticky top of panel)
-  const modeBar = document.createElement('div');
-  modeBar.style.cssText = 'display: flex; gap: 4px; margin-bottom: 12px;';
-  const browseTab = document.createElement('button');
-  const ankiTab = document.createElement('button');
-  function renderModeTabs(): void {
-    browseTab.textContent = '浏览';
-    browseTab.style.cssText = `
-      flex: 1; padding: 8px 4px; border: none; border-radius: 6px;
-      cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.2s;
-      background: ${appMode === 'browse' ? '#e94560' : '#0f3460'};
-      color: ${appMode === 'browse' ? '#fff' : '#aaa'};
-    `;
-    ankiTab.textContent = '记忆';
-    ankiTab.style.cssText = `
-      flex: 1; padding: 8px 4px; border: none; border-radius: 6px;
-      cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.2s;
-      background: ${appMode === 'anki' ? '#e94560' : '#0f3460'};
-      color: ${appMode === 'anki' ? '#fff' : '#aaa'};
-    `;
-  }
-  renderModeTabs();
-  browseTab.addEventListener('click', () => {
-    if (appMode === 'browse') return;
-    appMode = 'browse';
-    ankiActive = false;
-    renderModeTabs();
-    buildPanel();
-  });
-  ankiTab.addEventListener('click', () => {
-    if (appMode === 'anki') return;
-    appMode = 'anki';
-    ankiActive = true;
-    renderModeTabs();
-    buildPanel();
-  });
-  modeBar.appendChild(browseTab);
-  modeBar.appendChild(ankiTab);
-  panelContainer.appendChild(modeBar);
-
-  // Panel content wrapper (below mode bar)
+  // Panel content
   const panelContent = document.createElement('div');
   panelContent.style.cssText = 'display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0;';
   panelContainer.appendChild(panelContent);
@@ -195,7 +187,8 @@ export function initApp(): void {
           moveQueue = [];
           state = solvedState();
           renderer.sync(state);
-          renderModeTabs();
+          ankiBtn.style.background = 'rgba(15, 52, 96, 0.7)';
+          ankiBtn.style.color = '#aaa';
           buildPanel();
         },
       };

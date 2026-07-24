@@ -139,12 +139,16 @@ export function buildAnkiPanel(
   /** Moves accepted so far (a prefix of at least one candidate). */
   let userMoves: Move[] = [];
   let skipped = false;
+  let autoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
+  let countdownActive = false;
 
   container.style.display = 'flex';
   container.style.flexDirection = 'column';
   container.style.overflow = 'hidden';
 
   function render(): void {
+    if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
+    countdownActive = false;
     container.innerHTML = '';
     if (selectedPools.length === 0) {
       renderPoolSelector();
@@ -218,6 +222,7 @@ export function buildAnkiPanel(
     candidates = algorithmsOf(currentFormula).map(expandToSingles);
     userMoves = [];
     skipped = false;
+    countdownActive = false;
     onPickFormula(currentFormula);
     render();
   }
@@ -353,14 +358,13 @@ export function buildAnkiPanel(
       actionRow.appendChild(skipBtn);
     }
 
-    if (done || skipped) {
+    if (skipped) {
       const nextBtn = document.createElement('button');
-      nextBtn.textContent = skipped ? '下一题' : '✓ 正确！下一题';
+      nextBtn.textContent = '下一题';
       nextBtn.style.cssText = `
         flex: 1; padding: 10px; border: none; border-radius: 6px;
         cursor: pointer; font-size: 14px; font-weight: 600;
-        background: ${skipped ? '#0f3460' : '#4caf50'};
-        color: ${skipped ? '#aaa' : '#fff'};
+        background: #0f3460; color: #aaa;
       `;
       nextBtn.addEventListener('click', () => startRound());
       actionRow.appendChild(nextBtn);
@@ -368,12 +372,46 @@ export function buildAnkiPanel(
 
     container.appendChild(actionRow);
 
-    // Completion message
+    // Countdown + next button on correct completion
     if (done && !skipped) {
-      const msg = document.createElement('div');
-      msg.textContent = '🎉 正确！';
-      msg.style.cssText = 'text-align: center; color: #4caf50; font-weight: 600; font-size: 14px; margin-top: 8px; flex-shrink: 0;';
-      container.appendChild(msg);
+      const COUNTDOWN_SECS = 1;
+      const nextBtn = document.createElement('button');
+      nextBtn.style.cssText = `
+        flex: 1; padding: 10px; border: none; border-radius: 6px;
+        cursor: pointer; font-size: 14px; font-weight: 600;
+        background: #4caf50; color: #fff;
+      `;
+
+      const tick = () => {
+        if (!countdownActive) return;
+        const secs = countdownLeft;
+        nextBtn.textContent = `✓ 正确！下一题 (${secs})`;
+        if (secs <= 0) {
+          countdownActive = false;
+          startRound();
+          return;
+        }
+        countdownLeft = secs - 1;
+        autoAdvanceTimer = setTimeout(tick, 1000);
+      };
+
+      let countdownLeft = COUNTDOWN_SECS;
+      countdownActive = true;
+      tick();
+
+      nextBtn.addEventListener('click', () => {
+        if (countdownActive) {
+          // Cancel countdown
+          countdownActive = false;
+          if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
+          nextBtn.textContent = '下一题';
+          nextBtn.style.background = '#0f3460';
+          nextBtn.style.color = '#aaa';
+        } else {
+          startRound();
+        }
+      });
+      actionRow.appendChild(nextBtn);
     }
   }
 

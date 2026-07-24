@@ -24,6 +24,12 @@ android {
             keyPassword System.getenv("KEY_PASSWORD") ?: ""
         }
     }
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            output.outputFileName = "rubik-anki-${variant.versionName}.apk"
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
