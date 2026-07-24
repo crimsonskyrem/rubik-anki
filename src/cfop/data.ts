@@ -8,15 +8,22 @@ function f(
   algorithm: string,
   description = '',
   inverseOverride?: string,
+  alternatives: string[] = [],
 ): Formula {
   return {
     id,
     category,
     name,
     algorithm,
+    alternatives,
     inverse: inverseOverride ?? inverseAlgorithm(algorithm),
     description,
   };
+}
+
+/** All algorithms for a formula: primary first, then alternatives. */
+export function algorithmsOf(f: Formula): string[] {
+  return [f.algorithm, ...f.alternatives];
 }
 
 export function getAllFormulas(): Formula[] {
@@ -106,7 +113,7 @@ const OLL: Formula[] = [
   f('oll-05', 'oll', 'OLL #5', "l' U2 L U L' U l", '方形 Square', "l' U' L U' L' U2 l"),
   f('oll-06', 'oll', 'OLL #6', "r U2 R' U' R U' r'", '方形 Square', "r U R' U R U2 r'"),
   f('oll-07', 'oll', 'OLL #7', "r U R' U R U2 r'", '小闪电形', "r U2 R' U' R U' r'"),
-  f('oll-08', 'oll', 'OLL #8', "l' U' L U' L' U2 l", '小闪电形', "l' U2 L U L' U l"),
+  f('oll-08', 'oll', 'OLL #8', "l' U' L U' L' U2 l", '小闪电形', "l' U2 L U L' U l", ["R U2 R' U2 R' F R F'"]),
   f('oll-09', 'oll', 'OLL #9', "R U R' U' R' F R2 U R' U' F'", '鱼形 Fish', "F U R U' R2 F' R U R U' R'"),
   f('oll-10', 'oll', 'OLL #10', "R U R' U R' F R F' R U2 R'", '鱼形 Fish', "R U2 R' F R' F' R U' R U' R'"),
   f('oll-11', 'oll', 'OLL #11', "r U R' U R' F R F' R U2 r'", '小闪电形', "r U2 R' F R' F' R U' R U' r'"),
@@ -118,7 +125,7 @@ const OLL: Formula[] = [
   f('oll-17', 'oll', 'OLL #17', "F R' F' R2 r' U R U' R' U' M'", '点形 Dot', "M U R U R' U' r R2 F R F'"),
   f('oll-18', 'oll', 'OLL #18', "r U R' U R U2 r' r' U' R U' R' U2 r", '点形 Dot', "r' U2 R U R' U r r U2 R' U' R U' r'"),
   f('oll-19', 'oll', 'OLL #19', "r' R U R U R' U' M' R' F R F'", '点形 Dot', "F R' F' R M U R U' R' U' R' r"),
-  f('oll-20', 'oll', 'OLL #20', "r U R' U' M2 U R U' R' U' M'", '点形 Dot', "M U R U R' U' M2 U R U' r'"),
+  f('oll-20', 'oll', 'OLL #20', "r U R' U' M2 U R U' R' U' M'", '点形 Dot', "M U R U R' U' M2 U R U' r'", ["r' R U (R U R' U') M2 U R U' r'"]),
   f('oll-21', 'oll', 'OLL #21', "R U2 R' U' R U R' U' R U' R'", '十字形 Cross', "R U R' U R U' R' U R U2 R'"),
   f('oll-22', 'oll', 'OLL #22', "R U2 (R2 U' R2 U' R2) U2 R", '十字形 Cross', "R' U2 R2 U R2 U R2 U2 R'"),
   f('oll-23', 'oll', 'OLL #23', "R2 D' R U2 R' D R U2 R", '十字形 Cross', "R' U2 R' D' R U2 R' D R2"),
@@ -128,24 +135,24 @@ const OLL: Formula[] = [
   f('oll-27', 'oll', 'OLL #27', "R U R' U R U2 R'", '十字形 Cross', "R U2 R' U' R U' R'"),
   f('oll-28', 'oll', 'OLL #28', "r U R' U' r' R U R U' R'", '角块已定向', "R U R' U' R' r U R U' r'"),
   f('oll-29', 'oll', 'OLL #29', "R U R' U' R U' R' F' U' F R U R'", '别扭形 Awkward', "R U' R' F' U F R U R' U R U' R'"),
-  f('oll-30', 'oll', 'OLL #30', "F R' F R2 U' R' U' R U R' F2", '别扭形 Awkward', "F2 R U' R' U R U R2 F' R F'"),
+  f('oll-30', 'oll', 'OLL #30', "F R' F R2 U' R' U' R U R' F2", '别扭形 Awkward', "F2 R U' R' U R U R2 F' R F'", ["F U (R U2 R' U') R U2 R' U' F'"]),
   f('oll-31', 'oll', 'OLL #31', "R' U' F U R U' R' F' R", 'P 形', "R' F R U R' U' F' U R"),
   f('oll-32', 'oll', 'OLL #32', "L U F' U' L' U L F L'", 'P 形', "L F' L' U' L U F U' L'"),
   f('oll-33', 'oll', 'OLL #33', "R U R' U' R' F R F'", 'T 形', "F R' F' R U R U' R'"),
-  f('oll-34', 'oll', 'OLL #34', "R U R2 U' R' F R U R U' F'", 'C 形', "F U R' U' R' F' R U R2 U' R'"),
+  f('oll-34', 'oll', 'OLL #34', "R U R2 U' R' F R U R U' F'", 'C 形', "F U R' U' R' F' R U R2 U' R'", ["R U R' U' B' R' F R F' B"]),
   f('oll-35', 'oll', 'OLL #35', "R U2 R' R' F R F' R U2 R'", '鱼形 Fish', "R U2 R' F R' F' R R U2 R'"),
   f('oll-36', 'oll', 'OLL #36', "L' U' L U' L' U L U L F' L' F", 'W 形', "F' L F L' U' L' U' L U L' U L"),
-  f('oll-37', 'oll', 'OLL #37', "F R' F' R U R U' R'", '鱼形 Fish', "R U R' U' R' F R F'"),
+  f('oll-37', 'oll', 'OLL #37', "F R' F' R U R U' R'", '鱼形 Fish', "R U R' U' R' F R F'", ["F R U' R' U' R U R' F'"]),
   f('oll-38', 'oll', 'OLL #38', "R U R' U R U' R' U' R' F R F'", 'W 形', "F R' F' R U R U R' U' R U' R'"),
   f('oll-39', 'oll', 'OLL #39', "L F' L' U' L U F U' L'", '大闪电形', "L U F' U' L' U L F L'"),
   f('oll-40', 'oll', 'OLL #40', "R' F R U R' U' F' U R", '大闪电形', "R' U' F U R U' R' F' R"),
   f('oll-41', 'oll', 'OLL #41', "R U R' U R U2 R' F R U R' U' F'", '别扭形 Awkward', "F U R U' R' F' R U2 R' U' R U' R'"),
   f('oll-42', 'oll', 'OLL #42', "R' U' R U' R' U2 R F R U R' U' F'", '别扭形 Awkward', "F U R U' R' F' R' U2 R U R' U R"),
-  f('oll-43', 'oll', 'OLL #43', "F' U' L' U L F", 'P 形', "F' L' U' L U F"),
+  f('oll-43', 'oll', 'OLL #43', "F' U' L' U L F", 'P 形', "F' L' U' L U F", ["R' U' F R' F' R U R"]),
   f('oll-44', 'oll', 'OLL #44', "F U R U' R' F'", 'P 形', "F R U R' U' F'"),
   f('oll-45', 'oll', 'OLL #45', "F R U R' U' F'", 'T 形', "F U R U' R' F'"),
   f('oll-46', 'oll', 'OLL #46', "R' U' R' F R F' U R", 'C 形', "R' U' F R' F' R U R"),
-  f('oll-47', 'oll', 'OLL #47', "R' U' R' F R F' R' F R F' U R", '小 L 形', "R' U' F R' F' R F R' F' R U R"),
+  f('oll-47', 'oll', 'OLL #47', "R' U' R' F R F' R' F R F' U R", '小 L 形', "R' U' F R' F' R F R' F' R U R", ["F' L' U' L U L' U' L U F"]),
   f('oll-48', 'oll', 'OLL #48', "F R U R' U' R U R' U' F'", '小 L 形', "F U R U' R' U R U' R' F'"),
   f('oll-49', 'oll', 'OLL #49', "r U' r2 U r2 U r2 U' r", '小 L 形', "r' U r2 U' r2 U' r2 U r'"),
   f('oll-50', 'oll', 'OLL #50', "r' U r2 U' r2 U' r2 U r'", '小 L 形', "r U' r2 U r2 U r2 U' r"),
@@ -154,7 +161,7 @@ const OLL: Formula[] = [
   f('oll-53', 'oll', 'OLL #53', "l' U2 L U L' U' L U L' U l", '小 L 形', "l' U' L U' L' U L U' L' U2 l"),
   f('oll-54', 'oll', 'OLL #54', "(r U2 R' U') R U R' U' R U' r'", '小 L 形', "r U R' U R U' R' U R U2 r'"),
   f('oll-55', 'oll', 'OLL #55', "R' F R U R U' R2 F' R2 U' R' U R U R'", 'I 形', "R U' R' U' R U R2 F R2 U R' U' R' F' R"),
-  f('oll-56', 'oll', 'OLL #56', "(r' U' r) U' R' U R U' R' U R r' U r", 'I 形', "r' U' r R' U' R U R' U' R U r' U r"),
+  f('oll-56', 'oll', 'OLL #56', "(r' U' r) U' R' U R U' R' U R r' U r", 'I 形', "r' U' r R' U' R U R' U' R U r' U r", ["(r U r') U R U' R' U R U' R' (r U' r')", "(r U r') U R U' R' U R U' M' U' r'"]),
   f('oll-57', 'oll', 'OLL #57', "R U R' U' M' U R U' r'", '角块已定向', "r U R' U' M U R U' R'"),
 ];
 
@@ -162,13 +169,13 @@ const OLL: Formula[] = [
 // PLL cases (21 cases)
 // ═══════════════════════════════════════
 const PLL: Formula[] = [
-  f('pll-01', 'pll', 'PLL #1 - Ua', "R U' R U R U R U' R' U' R2", 'U 型顺时针三棱换'),
-  f('pll-02', 'pll', 'PLL #2 - Ub', "R2 U R U R' U' R' U' R' U R'", 'U 型逆时针三棱换'),
-  f('pll-03', 'pll', 'PLL #3 - H', "M2 U M2 U2 M2 U M2", 'H 型对棱换'),
+  f('pll-01', 'pll', 'PLL #1 - Ua', "R U' R U R U R U' R' U' R2", 'U 型顺时针三棱换', undefined, ["M2 U M U2 M' U M2", "y2 R2 U' R' U' R U R U R U' R"]),
+  f('pll-02', 'pll', 'PLL #2 - Ub', "R2 U R U R' U' R' U' R' U R'", 'U 型逆时针三棱换', undefined, ["M2 U' M U2 M' U' M2", "y2 R' U R' U' R' U' (R' U R U) R2"]),
+  f('pll-03', 'pll', 'PLL #3 - H', "M2 U M2 U2 M2 U M2", 'H 型对棱换', undefined, ["M2 U' M2 U2 M2 U' M2"]),
   f('pll-04', 'pll', 'PLL #4 - Z', "M2 U M2 U M' U2 M2 U2 M'", 'Z 型邻棱换'),
   f('pll-05', 'pll', 'PLL #5 - Aa', "R' F R' B2 R F' R' B2 R2", 'A 型三角顺时针'),
   f('pll-06', 'pll', 'PLL #6 - Ab', "R2 B2 R F R' B2 R F' R", 'A 型三角逆时针'),
-  f('pll-07', 'pll', 'PLL #7 - E', "R' U' R' D' R U' R' D R U R' D' R U R' D R2", 'E 型对角换'),
+  f('pll-07', 'pll', 'PLL #7 - E', "R' U' R' D' R U' R' D R U R' D' R U R' D R2", 'E 型对角换', undefined, ["x' L' U L D' L' U' L D L' U' L D' L' U L D", "x' R U' R' D R U R' D' R U R' D R U' R' D'"]),
   f('pll-08', 'pll', 'PLL #8 - F', "R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R", 'F 型'),
   f('pll-09', 'pll', 'PLL #9 - Ga', "R2 U R' U R' U' R U' R2 D U' R' U R D'", 'G 型 a'),
   f('pll-10', 'pll', 'PLL #10 - Gb', "R' U' R U D' R2 U R' U R U' R U' R2 D", 'G 型 b'),
@@ -178,9 +185,9 @@ const PLL: Formula[] = [
   f('pll-14', 'pll', 'PLL #14 - Jb', "R' U L' U2 R U' R' U2 R L", 'J 型 b'),
   f('pll-15', 'pll', 'PLL #15 - Na', "R U R' U R U R' F' R U R' U' R' F R2 U' R' U2 R U' R'", 'N 型 a'),
   f('pll-16', 'pll', 'PLL #16 - Nb', "R' U R U' R' F' U' F R U R' F R' F' R U' R", 'N 型 b'),
-  f('pll-17', 'pll', 'PLL #17 - Ra', "R U' R' U' R U R D R' U' R D' R' U2 R'", 'R 型 a'),
-  f('pll-18', 'pll', 'PLL #18 - Rb', "R' U2 R U2 R' F R U R' U' R' F' R2", 'R 型 b'),
+  f('pll-17', 'pll', 'PLL #17 - Ra', "R U' R' U' R U R D R' U' R D' R' U2 R'", 'R 型 a', undefined, ["R U R' F' R U2 R' U2 R' F R U R U2 R'"]),
+  f('pll-18', 'pll', 'PLL #18 - Rb', "R' U2 R U2 R' F R U R' U' R' F' R2", 'R 型 b', undefined, ["R' U2 R' D' R U' R' D R U R U' R' U' R"]),
   f('pll-19', 'pll', 'PLL #19 - T', "R U R' U' R' F R2 U' R' U' R U R' F'", 'T 型'),
-  f('pll-20', 'pll', 'PLL #20 - V', "R' U R' U' R D' R' D R' U D' R2 U' R2 D R2", 'V 型'),
-  f('pll-21', 'pll', 'PLL #21 - Y', "F R U' R' U' R U R' F' R U R' U' R' F R F'", 'Y 型'),
+  f('pll-20', 'pll', 'PLL #20 - V', "R' U R' U' R D' R' D R' U D' R2 U' R2 D R2", 'V 型', undefined, ["R' U R' U' y R' F' R2 U' R' U R' F R F", "R U2 R' D R U' R U' R U R2 D R' U' R D2", "x' R' F R F' U R U2 R' U' R U' R' U2 R U R' U'"]),
+  f('pll-21', 'pll', 'PLL #21 - Y', "F R U' R' U' R U R' F' R U R' U' R' F R F'", 'Y 型', undefined, ["F R' F R2 U' R' U' R U R' F' R U R' U' F'"]),
 ];

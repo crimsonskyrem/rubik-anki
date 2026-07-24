@@ -1,4 +1,5 @@
 import type { Formula } from '../cfop/types';
+import { algorithmsOf } from '../cfop/data';
 import { parseAlgorithm, type Move, type MoveBase, type MoveDir } from '../cube/algorithm';
 
 // ═══ Types ═══
@@ -89,6 +90,24 @@ function moveEqual(a: Move, b: Move): boolean {
   return a.base === b.base && a.dir === b.dir;
 }
 
+/** Expand an algorithm string into single-turn moves (dir:2 -> two dir:1). */
+function expandToSingles(alg: string): Move[] {
+  return parseAlgorithm(alg).flatMap((m): Move[] =>
+    m.dir === 2
+      ? [{ base: m.base, dir: 1 }, { base: m.base, dir: 1 }]
+      : [m],
+  );
+}
+
+/** True if `prefix` is a prefix of `candidate` (move-by-move). */
+function isPrefix(prefix: Move[], candidate: Move[]): boolean {
+  if (prefix.length > candidate.length) return false;
+  for (let i = 0; i < prefix.length; i++) {
+    if (!moveEqual(prefix[i], candidate[i])) return false;
+  }
+  return true;
+}
+
 function pickRandom(formulas: Formula[], pools: Category[]): Formula {
   const pool = formulas.filter((f) => pools.includes(f.category as Category));
   return pool[Math.floor(Math.random() * pool.length)];
@@ -97,6 +116,11 @@ function pickRandom(formulas: Formula[], pools: Category[]): Formula {
 function categoryBadge(cat: Formula['category']): string {
   const map: Record<string, string> = { cross: '十字', f2l: 'F2L', oll: 'OLL', pll: 'PLL' };
   return map[cat] ?? cat;
+}
+
+function moveLabel(m: Move): string {
+  const suffix = m.dir === -1 ? "'" : m.dir === 2 ? '2' : '';
+  return m.base + suffix;
 }
 
 // ═══ Builder ═══
@@ -110,8 +134,10 @@ export function buildAnkiPanel(
 
   let selectedPools = loadPools();
   let currentFormula: Formula | null = null;
-  let expectedMoves: Move[] = [];
-  let currentStep = 0;
+  /** All candidate algorithms for the current formula, each expanded to single turns. */
+  let candidates: Move[][] = [];
+  /** Moves accepted so far (a prefix of at least one candidate). */
+  let userMoves: Move[] = [];
   let skipped = false;
 
   container.style.display = 'flex';
@@ -125,6 +151,11 @@ export function buildAnkiPanel(
     } else {
       renderPractice();
     }
+  }
+
+  /** True when the user has finished any candidate algorithm. */
+  function isComplete(): boolean {
+    return candidates.some((c) => c.length === userMoves.length && isPrefix(userMoves, c));
   }
 
   // ═══ Pool Selector ═══
@@ -183,14 +214,9 @@ export function buildAnkiPanel(
 
   function startRound(): void {
     currentFormula = pickRandom(formulas, selectedPools);
-    const rawMoves = parseAlgorithm(currentFormula.algorithm);
-    // Expand double turns (dir:2) into two single turns — user presses the same button twice.
-    expectedMoves = rawMoves.flatMap((m): Move[] =>
-      m.dir === 2
-        ? [{ base: m.base, dir: 1 }, { base: m.base, dir: 1 }]
-        : [m],
-    );
-    currentStep = 0;
+    // Each algorithm is a candidate; expand double turns into two single turns.
+    candidates = algorithmsOf(currentFormula).map(expandToSingles);
+    userMoves = [];
     skipped = false;
     onPickFormula(currentFormula);
     render();
@@ -201,6 +227,8 @@ export function buildAnkiPanel(
       startRound();
       return;
     }
+
+    const done = isComplete();
 
     // Top bar
     const topBar = document.createElement('div');
@@ -248,39 +276,40 @@ export function buildAnkiPanel(
 
     container.appendChild(topBar);
 
-    // Progress display
+    // Progress display: completed moves as green tokens (count shown, no fixed total
+    // because alternative algorithms may differ in length).
     const progress = document.createElement('div');
     progress.style.cssText = `
       display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
       margin-bottom: 12px; flex-shrink: 0; min-height: 28px;
     `;
     const progressLabel = document.createElement('span');
-    progressLabel.textContent = `${currentStep} / ${expectedMoves.length}`;
+    progressLabel.textContent = `${userMoves.length} 步`;
     progressLabel.style.cssText = 'font-size: 13px; color: #aaa; font-weight: 600; margin-right: 6px;';
     progress.appendChild(progressLabel);
 
-    for (let i = 0; i < expectedMoves.length; i++) {
+    for (const m of userMoves) {
       const token = document.createElement('span');
-      if (i < currentStep) {
-        token.textContent = moveLabel(expectedMoves[i]);
-        token.style.cssText = 'color: #4caf50; font-weight: 600; font-size: 13px;';
-      } else {
-        token.textContent = '·';
-        token.style.cssText = 'color: #555; font-size: 16px;';
-      }
+      token.textContent = moveLabel(m);
+      token.style.cssText = 'color: #4caf50; font-weight: 600; font-size: 13px;';
       progress.appendChild(token);
     }
     container.appendChild(progress);
 
-    // Revealed formula (only when skipped)
+    // Revealed formulas (only when skipped): show primary + alternatives.
     if (skipped) {
       const reveal = document.createElement('div');
-      reveal.textContent = currentFormula.algorithm;
       reveal.style.cssText = `
         padding: 8px 12px; background: #0f3460; border-radius: 6px;
-        font-family: monospace; font-size: 14px; text-align: center;
-        color: #ff9800; margin-bottom: 12px; flex-shrink: 0;
+        font-family: monospace; font-size: 13px; flex-shrink: 0;
+        display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px;
       `;
+      algorithmsOf(currentFormula).forEach((alg, i) => {
+        const line = document.createElement('div');
+        line.textContent = `${i === 0 ? '主' : '变' + i}: ${alg}`;
+        line.style.cssText = `color: ${i === 0 ? '#ff9800' : '#ffd180'};`;
+        reveal.appendChild(line);
+      });
       container.appendChild(reveal);
     }
 
@@ -310,7 +339,7 @@ export function buildAnkiPanel(
     const actionRow = document.createElement('div');
     actionRow.style.cssText = 'display: flex; gap: 8px; margin-top: 12px; flex-shrink: 0;';
 
-    if (currentStep < expectedMoves.length && !skipped) {
+    if (!done && !skipped) {
       const skipBtn = document.createElement('button');
       skipBtn.textContent = '显示答案';
       skipBtn.style.cssText = `
@@ -324,7 +353,7 @@ export function buildAnkiPanel(
       actionRow.appendChild(skipBtn);
     }
 
-    if (currentStep === expectedMoves.length || skipped) {
+    if (done || skipped) {
       const nextBtn = document.createElement('button');
       nextBtn.textContent = skipped ? '下一题' : '✓ 正确！下一题';
       nextBtn.style.cssText = `
@@ -337,34 +366,36 @@ export function buildAnkiPanel(
       actionRow.appendChild(nextBtn);
     }
 
+    container.appendChild(actionRow);
+
     // Completion message
-    if (currentStep === expectedMoves.length && !skipped) {
+    if (done && !skipped) {
       const msg = document.createElement('div');
-      msg.textContent = '🎉 完全正确！';
+      msg.textContent = '🎉 正确！';
       msg.style.cssText = 'text-align: center; color: #4caf50; font-weight: 600; font-size: 14px; margin-top: 8px; flex-shrink: 0;';
       container.appendChild(msg);
     }
-
-    container.appendChild(actionRow);
   }
 
   // ═══ Move input ═══
 
   function handleMoveInput(mb: MoveButton, btnEl: HTMLButtonElement): void {
-    if (currentStep >= expectedMoves.length || skipped) return;
+    if (skipped || isComplete()) return;
 
-    const expected = expectedMoves[currentStep];
     const input: Move = { base: mb.base, dir: mb.dir };
+    const tentative = [...userMoves, input];
 
-    if (moveEqual(input, expected)) {
-      currentStep++;
+    // Accept if any candidate algorithm has the tentative sequence as a prefix.
+    const ok = candidates.some((c) => isPrefix(tentative, c));
+    if (ok) {
+      userMoves = tentative;
       onCorrectMove(input);
-      if (currentStep === expectedMoves.length) {
+      if (isComplete()) {
         onComplete();
       }
       render();
     } else {
-      // Flash red
+      // Wrong move: flash red briefly.
       const origBg = btnEl.style.background;
       btnEl.style.color = '#fff';
       btnEl.style.background = '#e94560';
@@ -373,11 +404,6 @@ export function buildAnkiPanel(
         btnEl.style.color = '#e0e0e0';
       }, 300);
     }
-  }
-
-  function moveLabel(m: Move): string {
-    const suffix = m.dir === -1 ? "'" : m.dir === 2 ? '2' : '';
-    return m.base + suffix;
   }
 
   render();

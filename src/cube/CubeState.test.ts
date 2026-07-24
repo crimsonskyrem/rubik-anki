@@ -263,6 +263,41 @@ describe('PLL initial states', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
+//  PLL alternatives: every alternative algorithm must solve the case's
+//  pattern to a solved-looking state (all 6 faces monochrome, allowing
+//  a whole-cube rotation). Guards the jperm-sourced PLL alternative data.
+// ═══════════════════════════════════════════════════════════════════
+
+function sixUniform(state: StickerState[]): boolean {
+  const faces: Record<string, string> = {};
+  for (const s of state) {
+    const key = `${s.normal.x},${s.normal.y},${s.normal.z}`;
+    if (key in faces && faces[key] !== s.color) return false;
+    faces[key] = s.color;
+  }
+  return Object.keys(faces).length === 6;
+}
+
+describe('PLL alternatives are valid', () => {
+  const pll = getAllFormulas().filter((x) => x.category === 'pll');
+  const withAlts = pll.filter((f) => f.alternatives.length > 0);
+
+  test('at least one PLL case has alternatives (sanity)', () => {
+    expect(withAlts.length).toBeGreaterThan(0);
+  });
+
+  for (const f of withAlts) {
+    const pattern = applyAlgorithm(solvedState(), f.inverse);
+    for (const alt of f.alternatives) {
+      test(`${f.id}: alternative "${alt}" solves to 6 uniform faces`, () => {
+        const result = applyAlgorithm(pattern, alt);
+        expect(sixUniform(result)).toBe(true);
+      });
+    }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
 //  applyAlgorithm & inverseAlgorithm
 // ═══════════════════════════════════════════════════════════════════
 
@@ -339,6 +374,32 @@ describe('OLL initial states preserve F2L', () => {
   test('all 57 OLL initial states have F2L solved (only U scrambled)', () => {
     expect(failing).toEqual([]);
   });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  OLL alternatives: every alternative algorithm must orient the last
+//  layer (U face all yellow) and preserve F2L on the case's pattern.
+//  Guards the jperm-sourced alternative data (e.g. OLL-30 has 2 algs).
+// ═══════════════════════════════════════════════════════════════════
+
+describe('OLL alternatives are valid', () => {
+  const oll = getAllFormulas().filter((x) => x.category === 'oll');
+  const withAlts = oll.filter((f) => f.alternatives.length > 0);
+
+  test('at least one OLL case has alternatives (sanity)', () => {
+    expect(withAlts.length).toBeGreaterThan(0);
+  });
+
+  for (const f of withAlts) {
+    const pattern = applyAlgorithm(solvedState(), f.inverse);
+    for (const alt of f.alternatives) {
+      test(`${f.id}: alternative "${alt}" orients LL + preserves F2L`, () => {
+        const result = applyAlgorithm(pattern, alt);
+        expect(uFaceAllYellow(result)).toBe(true);
+        expect(f2lSolved(result)).toBe(true);
+      });
+    }
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════

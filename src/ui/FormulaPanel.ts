@@ -1,9 +1,10 @@
 import type { Formula } from '../cfop/types';
+import { algorithmsOf } from '../cfop/data';
 
 /** Callbacks the panel fires into the app. */
 export interface PanelHandlers {
-  /** A formula was selected: snap to its pattern (and auto-play if enabled). */
-  onSelect: (formula: Formula) => void;
+  /** A formula (and which algorithm index) was selected: snap to its pattern (and auto-play if enabled). */
+  onSelect: (formula: Formula, algIndex: number) => void;
   /** The auto-play toggle changed. `next` is the new state (true = auto). */
   onToggleAutoPlay: (next: boolean) => void;
   /** The algorithm display was clicked: advance one step (manual mode). */
@@ -14,7 +15,8 @@ export interface PanelHandlers {
  * Build the formula selection panel in the given container.
  *
  * Layout (top to bottom): title, category tabs, control row
- * (auto-play toggle + clickable algorithm display), formula list.
+ * (auto-play toggle + clickable algorithm display), optional algorithm
+ * variant selector, formula list.
  */
 export function buildFormulaPanel(
   container: HTMLElement,
@@ -32,7 +34,8 @@ export function buildFormulaPanel(
 
   let activeCategory: Formula['category'] = 'cross';
   let autoPlay = false;
-  let currentAlgorithm = '';
+  let currentFormula: Formula | null = null;
+  let currentAlgIndex = 0;
 
   // Container flex layout: header fixed, list scrolls
   container.style.display = 'flex';
@@ -93,14 +96,45 @@ export function buildFormulaPanel(
   });
   controlRow.appendChild(algDisplay);
 
+  // Algorithm variant selector (only when the selected formula has alternatives)
+  const variantBar = document.createElement('div');
+  variantBar.style.cssText = 'display: flex; gap: 4px; margin-bottom: 8px;';
+  header.appendChild(variantBar);
+
+  function currentAlgorithm(): string {
+    return currentFormula ? algorithmsOf(currentFormula)[currentAlgIndex] : '';
+  }
+
   function updateAlgDisplay(): void {
-    if (!currentAlgorithm) {
+    const alg = currentAlgorithm();
+    if (!alg) {
       algDisplay.textContent = '选择一个公式开始';
       return;
     }
-    algDisplay.textContent = autoPlay
-      ? currentAlgorithm
-      : `${currentAlgorithm}  （点击逐步执行）`;
+    algDisplay.textContent = alg;
+  }
+
+  function renderVariants(): void {
+    variantBar.innerHTML = '';
+    if (!currentFormula || currentFormula.alternatives.length === 0) return;
+    const algs = algorithmsOf(currentFormula);
+    algs.forEach((_, i) => {
+      const tab = document.createElement('button');
+      tab.textContent = i === 0 ? '主解法' : `变体 ${i}`;
+      tab.style.cssText = `
+        flex: 1; padding: 6px 4px; border: none; border-radius: 6px;
+        cursor: pointer; font-size: 12px; font-weight: 600; transition: background 0.2s;
+        background: ${i === currentAlgIndex ? '#e94560' : '#0f3460'};
+        color: ${i === currentAlgIndex ? '#fff' : '#aaa'};
+      `;
+      tab.addEventListener('click', () => {
+        currentAlgIndex = i;
+        renderVariants();
+        updateAlgDisplay();
+        onSelect(currentFormula!, i);
+      });
+      variantBar.appendChild(tab);
+    });
   }
 
   // Formula list (scrollable)
@@ -137,8 +171,18 @@ export function buildFormulaPanel(
       item.style.cssText = `
         padding: 10px 12px; background: #0f3460; border-radius: 6px;
         cursor: pointer; transition: background 0.15s; font-size: 13px;
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
       `;
-      item.textContent = f.name;
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = f.name;
+      item.appendChild(nameSpan);
+
+      if (f.alternatives.length > 0) {
+        const badge = document.createElement('span');
+        badge.textContent = `${f.alternatives.length + 1} 解法`;
+        badge.style.cssText = 'font-size: 11px; color: #e94560; font-weight: 600; flex-shrink: 0;';
+        item.appendChild(badge);
+      }
       item.title = f.description || f.algorithm;
 
       item.addEventListener('click', () => {
@@ -150,9 +194,11 @@ export function buildFormulaPanel(
         // Select this one (background handled by .selected CSS rule)
         item.classList.add('selected');
 
-        currentAlgorithm = f.algorithm;
+        currentFormula = f;
+        currentAlgIndex = 0;
+        renderVariants();
         updateAlgDisplay();
-        onSelect(f);
+        onSelect(f, 0);
       });
 
       item.addEventListener('mouseenter', () => {

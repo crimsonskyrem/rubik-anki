@@ -4,7 +4,7 @@ import { Rotator, hitToFace } from './cube/Rotator';
 import { OrbitController } from './interaction/OrbitController';
 import { buildFormulaPanel } from './ui/FormulaPanel';
 import { buildAnkiPanel, type AnkiHandlers } from './anki/AnkiPanel';
-import { getAllFormulas } from './cfop/data';
+import { getAllFormulas, algorithmsOf } from './cfop/data';
 import type { Formula } from './cfop/types';
 import { solvedState, applyMove, applyAlgorithm, getMoveDef, type StickerState } from './cube/CubeState';
 import { parseAlgorithm, type MoveBase, type Move } from './cube/algorithm';
@@ -22,6 +22,7 @@ let state: StickerState[] = solvedState();
 interface QueuedMove { move: { base: MoveBase; dir: 1 | -1 }; axis: THREE.Vector3; layers: number[] }
 let moveQueue: QueuedMove[] = [];
 let pendingFormula: Formula | null = null;
+let pendingAlgIndex = 0;
 
 /** Auto-play toggle. ON: animate the full solve after snapping. OFF: step manually. */
 let autoPlay = false;
@@ -171,7 +172,7 @@ export function initApp(): void {
     panelContent.innerHTML = '';
     if (appMode === 'browse') {
       buildFormulaPanel(panelContent, formulas, {
-        onSelect: (formula: Formula) => applyFormula(formula),
+        onSelect: (formula: Formula, algIndex: number) => applyFormula(formula, algIndex),
         onToggleAutoPlay: (next: boolean) => { autoPlay = next; },
         onStep: () => step(),
       });
@@ -248,8 +249,10 @@ function playNextMove(): void {
     // After each move: if queue empty & pending formula, apply it (browse mode only)
     if (moveQueue.length === 0 && pendingFormula && !ankiActive) {
       const f = pendingFormula;
+      const idx = pendingAlgIndex;
       pendingFormula = null;
-      applyFormulaNow(f);
+      pendingAlgIndex = 0;
+      applyFormulaNow(f, idx);
     }
   });
 }
@@ -272,21 +275,23 @@ function enqueueMove(move: Move): void {
   }
 }
 
-function applyFormula(formula: Formula): void {
+function applyFormula(formula: Formula, algIndex = 0): void {
   moveQueue = [];
 
   if (rotator.isRotating) {
     pendingFormula = formula;
+    pendingAlgIndex = algIndex;
     return;
   }
 
-  applyFormulaNow(formula);
+  applyFormulaNow(formula, algIndex);
 }
 
-function applyFormulaNow(formula: Formula): void {
+function applyFormulaNow(formula: Formula, algIndex = 0): void {
   state = applyAlgorithm(solvedState(), formula.inverse);
   renderer.sync(state);
-  for (const move of parseAlgorithm(formula.algorithm)) {
+  const alg = algorithmsOf(formula)[algIndex] ?? formula.algorithm;
+  for (const move of parseAlgorithm(alg)) {
     enqueueMove(move);
   }
 }
