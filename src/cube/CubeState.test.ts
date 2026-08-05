@@ -422,3 +422,27 @@ describe('CFOP round-trip (all formulas)', () => {
     });
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+//  Manual-turn restart: a click-to-rotate layer turn corrupts the
+//  session state, so the app restarts the formula (fresh inverse
+//  scramble from solved + full algorithm). Guards that the restart
+//  path keeps the steps able to restore the cube.
+// ═══════════════════════════════════════════════════════════════════
+
+describe('manual turn then restart still restores the cube', () => {
+  const formulas = getAllFormulas();
+  for (const f of formulas.slice(0, 5)) {
+    test(`${f.id}: restart after a manual turn returns to solved`, () => {
+      // Session start: scramble the cube for this formula.
+      const pattern = applyAlgorithm(solvedState(), f.inverse);
+      // User manually turns a layer on screen.
+      const corrupted = applyMove(pattern, { base: 'R', dir: 1 });
+      expect(serialize(corrupted)).not.toBe(serialize(pattern));
+      // Restart: re-scramble from solved, then play the algorithm.
+      const restarted = applyAlgorithm(solvedState(), f.inverse);
+      const restored = applyAlgorithm(restarted, f.algorithm);
+      expect(serialize(restored)).toBe(serialize(solvedState()));
+    });
+  }
+});

@@ -11,6 +11,8 @@ export interface AnkiHandlers {
   onCorrectMove: (move: Move) => void;
   onComplete: () => void;
   onExit: () => void;
+  /** True when the user manually turned a layer since the round started. */
+  isSessionDirty: () => boolean;
 }
 
 interface MoveButton {
@@ -130,8 +132,7 @@ export function buildAnkiPanel(
   formulas: Formula[],
   handlers: AnkiHandlers,
 ): void {
-  const { onPickFormula, onCorrectMove, onComplete, onExit } = handlers;
-
+  const { onPickFormula, onCorrectMove, onComplete, onExit, isSessionDirty } = handlers;
   let selectedPools = loadPools();
   let currentFormula: Formula | null = null;
   /** All candidate algorithms for the current formula, each expanded to single turns. */
@@ -216,15 +217,20 @@ export function buildAnkiPanel(
 
   // ═══ Practice ═══
 
-  function startRound(): void {
-    currentFormula = pickRandom(formulas, selectedPools);
+  /** Start a round with a specific formula (fresh scramble, cleared progress). */
+  function beginRound(f: Formula): void {
+    currentFormula = f;
     // Each algorithm is a candidate; expand double turns into two single turns.
-    candidates = algorithmsOf(currentFormula).map(expandToSingles);
+    candidates = algorithmsOf(f).map(expandToSingles);
     userMoves = [];
     skipped = false;
     countdownActive = false;
-    onPickFormula(currentFormula);
+    onPickFormula(f);
     render();
+  }
+
+  function startRound(): void {
+    beginRound(pickRandom(formulas, selectedPools));
   }
 
   function renderPractice(): void {
@@ -419,6 +425,13 @@ export function buildAnkiPanel(
 
   function handleMoveInput(mb: MoveButton, btnEl: HTMLButtonElement): void {
     if (skipped || isComplete()) return;
+
+    if (isSessionDirty()) {
+      // Cube was manually rotated on screen: restart this round so the
+      // move buttons match the on-screen cube again.
+      beginRound(currentFormula!);
+      return;
+    }
 
     const input: Move = { base: mb.base, dir: mb.dir };
     const tentative = [...userMoves, input];

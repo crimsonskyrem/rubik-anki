@@ -24,6 +24,11 @@ let moveQueue: QueuedMove[] = [];
 let pendingFormula: Formula | null = null;
 let pendingAlgIndex = 0;
 
+/** The active formula session (browse mode) — used to restart after manual turns. */
+let currentFormula: Formula | null = null;
+let currentAlgIndex = 0;
+/** True once the user manually turned a layer, diverging state from the active session. */
+let manualTurn = false;
 /** Auto-play toggle. ON: animate the full solve after snapping. OFF: step manually. */
 let autoPlay = false;
 
@@ -134,6 +139,7 @@ export function initApp(): void {
       appMode = 'browse';
       ankiActive = false;
       moveQueue = [];
+      manualTurn = false;
       state = solvedState();
       renderer.sync(state);
       ankiBtn.style.background = 'rgba(15, 52, 96, 0.7)';
@@ -141,6 +147,7 @@ export function initApp(): void {
     } else {
       appMode = 'anki';
       ankiActive = true;
+      manualTurn = false;
       ankiBtn.style.background = 'rgba(233, 69, 96, 0.7)';
       ankiBtn.style.color = '#fff';
     }
@@ -172,6 +179,7 @@ export function initApp(): void {
       const ankiHandlers: AnkiHandlers = {
         onPickFormula: (formula: Formula) => {
           moveQueue = [];
+          manualTurn = false;
           state = applyAlgorithm(solvedState(), formula.inverse);
           renderer.sync(state);
         },
@@ -185,12 +193,14 @@ export function initApp(): void {
           appMode = 'browse';
           ankiActive = false;
           moveQueue = [];
+          manualTurn = false;
           state = solvedState();
           renderer.sync(state);
           ankiBtn.style.background = 'rgba(15, 52, 96, 0.7)';
           ankiBtn.style.color = '#aaa';
           buildPanel();
         },
+        isSessionDirty: () => manualTurn,
       };
       buildAnkiPanel(panelContent, formulas, ankiHandlers);
     }
@@ -226,6 +236,8 @@ function handleClick(e: MouseEvent): void {
   rotator.startRotation(axisVec(base), getMoveDef(base).layers, dir, () => {
     state = applyMove(state, move);
     renderer.sync(state);
+    // Manual turn diverges state from the active formula session; next step restarts it.
+    manualTurn = true;
   });
 }
 
@@ -253,6 +265,11 @@ function playNextMove(): void {
 /** Manual step: advance one move. Only acts when auto-play is off. */
 function step(): void {
   if (autoPlay) return;
+  if (manualTurn && currentFormula) {
+    // State was manually rotated: restart the formula so the steps can restore the cube.
+    applyFormula(currentFormula, currentAlgIndex);
+    return;
+  }
   playNextMove();
 }
 
@@ -270,6 +287,9 @@ function enqueueMove(move: Move): void {
 
 function applyFormula(formula: Formula, algIndex = 0): void {
   moveQueue = [];
+  currentFormula = formula;
+  currentAlgIndex = algIndex;
+  manualTurn = false;
 
   if (rotator.isRotating) {
     pendingFormula = formula;
