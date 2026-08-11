@@ -64,11 +64,14 @@ export class SquareRenderer {
         clipBias: 0.003,
         textureWidth: 512,
         textureHeight: 512,
-        color: 0x556677,
+        color: 0xffffff, // keep reflected colors true (0x556677 would darken them ~2/3)
       });
       mirror.position.set(pos[0], pos[1], pos[2]);
       if (rot) mirror.rotation.set(rot[0], rot[1], rot[2]);
       mirror.layers.set(SquareRenderer.MIRROR_LAYER);
+      // Reflector clones the main camera for reflections — reset the clone to
+      // layer 0 so it renders only the cube, never the other mirrors.
+      mirror.getReflectionCamera(this.camera).layers.set(0);
       const mat = mirror.material as THREE.ShaderMaterial;
       mat.transparent = true;
       mat.opacity = 0.7;
