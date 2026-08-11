@@ -1,65 +1,64 @@
 import * as THREE from 'three';
 
-interface RendererLike {
-  camera: THREE.PerspectiveCamera;
-  renderer: THREE.WebGLRenderer;
-}
+const BASE_DIR = new THREE.Vector3(5, 4.5, 6).normalize();
+const BASE_RADIUS = new THREE.Vector3(5, 4.5, 6).length(); // ≈ 8.9
 
 /**
- * Orbit controller: drag to rotate, scroll to zoom, click to interact.
+ * Drag rotates the CUBE (not the camera); mirrors stay fixed in world space.
+ * Scroll zooms the camera along its fixed view direction.
  * Distinguishes click from drag via movement threshold.
  */
 export class OrbitController {
-  private renderer: RendererLike;
+  private cubeGroup: THREE.Group;
+  private camera: THREE.PerspectiveCamera;
   private isDragging = false;
   private isClick = false;
   private startX = 0;
   private startY = 0;
   private lastX = 0;
   private lastY = 0;
-  private spherical = { theta: Math.PI / 4, phi: Math.PI / 3, radius: 8.5 };
-  private readonly _initialSpherical = { ...this.spherical };
+  private radius = BASE_RADIUS;
   private onClickCallback: ((e: MouseEvent) => void) | null = null;
   private _enabled = true;
 
   private static readonly CLICK_THRESHOLD = 3; // px — max movement to count as click
+  private static readonly Y_AXIS = new THREE.Vector3(0, 1, 0);
+  private static readonly X_AXIS = new THREE.Vector3(1, 0, 0);
 
-  constructor(renderer: RendererLike) {
-    this.renderer = renderer;
-    const canvas = renderer.renderer.domElement;
+  constructor(cubeGroup: THREE.Group, camera: THREE.PerspectiveCamera) {
+    this.cubeGroup = cubeGroup;
+    this.camera = camera;
+  }
 
-    // Mouse events
+  /** Wire input listeners to the renderer's canvas (called once by the app). */
+  bindCanvas(canvas: HTMLElement): void {
+    this._bindCanvas(canvas);
+  }
+
+  private _bindCanvas(canvas: HTMLElement | null): void {
+    if (!canvas) return;
     canvas.addEventListener('mousedown', (e: MouseEvent) => this._onPointerDown(e));
     canvas.addEventListener('mousemove', (e: MouseEvent) => this._onPointerMove(e));
     canvas.addEventListener('mouseup', (e: MouseEvent) => this._onPointerUp(e));
     canvas.addEventListener('mouseleave', () => this._onCancel());
 
-    // Touch events
     canvas.addEventListener('touchstart', (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        this._onPointerDown(e.touches[0]);
-      }
+      if (e.touches.length === 1) this._onPointerDown(e.touches[0]);
     }, { passive: false });
     canvas.addEventListener('touchmove', (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        this._onPointerMove(e.touches[0]);
-      }
+      if (e.touches.length === 1) this._onPointerMove(e.touches[0]);
     });
-    canvas.addEventListener('touchend', (e: TouchEvent) => {
-      // For touch, use last touch position
+    canvas.addEventListener('touchend', () => {
       const fakeEvent = { clientX: this.lastX, clientY: this.lastY } as MouseEvent;
       this._onPointerUp(fakeEvent);
     });
 
-    // Scroll zoom
     canvas.addEventListener('wheel', (e: WheelEvent) => {
       if (!this._enabled) return;
       e.preventDefault();
-      this.spherical.radius = Math.max(4, Math.min(20, this.spherical.radius + e.deltaY * 0.01));
+      this.radius = Math.max(4, Math.min(20, this.radius + e.deltaY * 0.01));
       this._updateCamera();
     }, { passive: false });
-
-    this._updateCamera();
   }
 
   /** Register a callback for clicks (not drags) on the canvas */
@@ -67,13 +66,12 @@ export class OrbitController {
     this.onClickCallback = cb;
   }
 
-  /** Reset camera to the initial view. */
+  /** Reset the cube orientation (mirrors untouched). */
   reset(): void {
-    this.spherical = { ...this._initialSpherical };
-    this._updateCamera();
+    this.cubeGroup.quaternion.identity();
   }
 
-  /** Enable or disable orbit/drag/zoom. */
+  /** Enable or disable drag/zoom. */
   setEnabled(enabled: boolean): void {
     this._enabled = enabled;
   }
@@ -99,7 +97,6 @@ export class OrbitController {
     this.lastX = e.clientX;
     this.lastY = e.clientY;
 
-    // Check if moved beyond click threshold
     const totalDx = e.clientX - this.startX;
     const totalDy = e.clientY - this.startY;
     if (Math.abs(totalDx) > OrbitController.CLICK_THRESHOLD ||
@@ -107,9 +104,9 @@ export class OrbitController {
       this.isClick = false;
     }
 
-    this.spherical.theta -= dx * 0.005;
-    this.spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, this.spherical.phi - dy * 0.005));
-    this._updateCamera();
+    // Rotate the cube around world axes; mirrors and camera stay put.
+    this.cubeGroup.rotateOnWorldAxis(OrbitController.Y_AXIS, dx * 0.005);
+    this.cubeGroup.rotateOnWorldAxis(OrbitController.X_AXIS, dy * 0.005);
   }
 
   private _onPointerUp(e: MouseEvent): void {
@@ -126,11 +123,7 @@ export class OrbitController {
   }
 
   private _updateCamera(): void {
-    const { theta, phi, radius } = this.spherical;
-    const x = radius * Math.sin(phi) * Math.cos(theta);
-    const y = radius * Math.cos(phi);
-    const z = radius * Math.sin(phi) * Math.sin(theta);
-    this.renderer.camera.position.set(x, y, z);
-    this.renderer.camera.lookAt(0, 0, 0);
+    this.camera.position.copy(BASE_DIR.clone().multiplyScalar(this.radius));
+    this.camera.lookAt(0, 0, 0);
   }
 }

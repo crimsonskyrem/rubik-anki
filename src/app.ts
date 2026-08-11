@@ -67,13 +67,14 @@ export function initApp(): void {
   // Establish the invariant: displayed cube === state.
   renderer.sync(state);
 
-  const controller = new OrbitController(renderer);
+  const controller = new OrbitController(renderer.cubeGroup, renderer.camera);
+  controller.bindCanvas(renderer.renderer.domElement);
   controller.onClick((e: MouseEvent) => handleClick(e));
 
   // Reset/lock button (icon style, bottom-right of cube-container)
   const resetBtn = document.createElement('button');
   resetBtn.textContent = '⟳';
-  resetBtn.title = '点击重置镜头，再次点击锁定';
+  resetBtn.title = '点击重置魔方，再次点击锁定';
   resetBtn.style.cssText = `
     position: absolute; bottom: 16px; right: 16px; z-index: 10;
     width: 40px; height: 40px; border: none; border-radius: 50%;
@@ -98,7 +99,7 @@ export function initApp(): void {
       btnState = 0;
       controller.setEnabled(true);
       controller.reset();
-      setBtnStyle('rgba(15, 52, 96, 0.7)', '#aaa', '点击重置镜头，再次点击锁定');
+      setBtnStyle('rgba(15, 52, 96, 0.7)', '#aaa', '点击重置魔方，再次点击锁定');
     } else if (btnState === 1) {
       // Reset pending → lock
       clearTimeout(pendingTimer!);
@@ -111,11 +112,11 @@ export function initApp(): void {
       btnState = 1;
       controller.reset();
       controller.setEnabled(true);
-      setBtnStyle('rgba(233, 69, 96, 0.7)', '#fff', '再次点击锁定镜头');
+      setBtnStyle('rgba(233, 69, 96, 0.7)', '#fff', '再次点击锁定魔方');
       pendingTimer = setTimeout(() => {
         pendingTimer = null;
         btnState = 0;
-        setBtnStyle('rgba(15, 52, 96, 0.7)', '#aaa', '点击重置镜头，再次点击锁定');
+        setBtnStyle('rgba(15, 52, 96, 0.7)', '#aaa', '点击重置魔方，再次点击锁定');
       }, 1000);
     }
   });
