@@ -18,6 +18,13 @@ export class SquareRenderer {
   cubies: CubieMesh[] = [];
   /** All 54 sticker squares (flat references for raycasting) */
   squares: StickerMesh[] = [];
+  /**
+   * Mirrors live on layer 2: the main camera (layers 0+2) sees them, but the
+   * Reflector's internal reflection camera (layer 0 only) does not — so each
+   * mirror reflects only the cube, never the other mirrors (no 6-cube
+   * mirror-hall effect, no color pollution).
+   */
+  private static readonly MIRROR_LAYER = 2;
   private raycaster: THREE.Raycaster;
 
   constructor(container: HTMLElement) {
@@ -32,6 +39,7 @@ export class SquareRenderer {
     );
     this.camera.position.set(5, 4.5, 6);
     this.camera.lookAt(0, 0, 0);
+    this.camera.layers.enable(SquareRenderer.MIRROR_LAYER);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(container.clientWidth, container.clientHeight);
@@ -60,6 +68,7 @@ export class SquareRenderer {
       });
       mirror.position.set(pos[0], pos[1], pos[2]);
       if (rot) mirror.rotation.set(rot[0], rot[1], rot[2]);
+      mirror.layers.set(SquareRenderer.MIRROR_LAYER);
       const mat = mirror.material as THREE.ShaderMaterial;
       mat.transparent = true;
       mat.opacity = 0.7;
