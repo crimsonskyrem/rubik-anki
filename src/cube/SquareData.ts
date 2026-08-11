@@ -115,3 +115,30 @@ export function roundToGrid(v: Vector3): Vector3 {
     Math.round(v.z * 2) / 2,
   );
 }
+
+/** A cubie: its integer center and the sticker indices belonging to it. */
+export interface CubieGroup {
+  center: { x: number; y: number; z: number };
+  stickerIndices: number[];
+}
+
+/**
+ * Partition the 54 stickers into 26 cubies by their cubie center
+ * (sticker pos − 0.5 × normal, rounded). Same rule as CubeState.applyMove.
+ */
+export function groupStickersIntoCubies(elements: StickerElement[]): CubieGroup[] {
+  const byKey = new Map<string, CubieGroup>();
+  elements.forEach((el, i) => {
+    const cx = Math.round(el.pos.x - 0.5 * el.normal.x);
+    const cy = Math.round(el.pos.y - 0.5 * el.normal.y);
+    const cz = Math.round(el.pos.z - 0.5 * el.normal.z);
+    const key = `${cx},${cy},${cz}`;
+    let g = byKey.get(key);
+    if (!g) {
+      g = { center: { x: cx, y: cy, z: cz }, stickerIndices: [] };
+      byKey.set(key, g);
+    }
+    g.stickerIndices.push(i);
+  });
+  return [...byKey.values()];
+}
