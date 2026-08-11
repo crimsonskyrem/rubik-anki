@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SquareMesh } from './SquareRenderer';
+import { CubieMesh } from './CubieMesh';
 
 const RIGHT_ANGLE = Math.PI / 2;
 
@@ -8,21 +8,14 @@ function axisIndex(axis: THREE.Vector3): 'x' | 'y' | 'z' {
   return Math.abs(axis.x) > 0 ? 'x' : Math.abs(axis.y) > 0 ? 'y' : 'z';
 }
 
-/** Cubie-center position: offset inward by 0.5 along the sticker normal. */
-function getTemPos(sq: SquareMesh): THREE.Vector3 {
-  return sq.element.pos.clone().addScaledVector(sq.element.normal, -0.5);
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  Rotator - rotates a set of layers via a pivot Group (view-only tween).
-//  Axis + layers + dir come from the model's MoveDef, so animation and
-//  instant application agree exactly. Truth is committed by the caller's
-//  onComplete (applyMove + renderer.sync).
-// ═══════════════════════════════════════════════════════════════════
-
+/**
+ * Rotator — rotates a set of layers via a pivot Group (view-only tween).
+ * Layer membership is decided by each cubie's group position (local to
+ * cubeGroup, unchanged by drag-rotation of the cube itself).
+ */
 export class Rotator {
-  private squares: SquareMesh[];
-  private parentGroup: THREE.Group; // cubeGroup
+  private cubies: CubieMesh[];
+  private parentGroup: THREE.Group;
 
   private _pivot: THREE.Group | null = null;
   private _rotating = false;
@@ -31,34 +24,33 @@ export class Rotator {
   private _targetAngle = 0;
   private _startTime = 0;
   private _duration = 250;
-  private _activeSquares: SquareMesh[] = [];
+  private _activeCubies: CubieMesh[] = [];
   private _onComplete: (() => void) | null = null;
 
-  constructor(squares: SquareMesh[]) {
-    this.squares = squares;
-    this.parentGroup = squares[0].parent as THREE.Group;
+  constructor(cubies: CubieMesh[]) {
+    this.cubies = cubies;
+    this.parentGroup = cubies[0].parent as THREE.Group;
   }
 
-  /** Begin rotating every sticker whose cubie center is in `layers` around `axis` by dir × 90°. */
+  /** Begin rotating every cubie in `layers` around `axis` by dir × 90°. */
   startRotation(axis: THREE.Vector3, layers: number[], dir: 1 | -1, onComplete?: () => void): boolean {
     if (this._rotating) return false;
 
     const axisIdx = axisIndex(axis);
     const layerSet = new Set(layers);
-    const activeSquares = this.squares.filter((sq) => {
-      const tp = getTemPos(sq);
-      return layerSet.has(Math.round(tp[axisIdx]));
-    });
-    if (activeSquares.length === 0) return false;
+    const activeCubies = this.cubies.filter((c) =>
+      layerSet.has(Math.round(c.position[axisIdx])),
+    );
+    if (activeCubies.length === 0) return false;
 
-    // Create pivot Group at origin and move active squares into it (attach preserves world transform).
+    // Create pivot Group at origin and move active cubies into it (attach preserves world transform).
     this._pivot = new THREE.Group();
     this.parentGroup.add(this._pivot);
-    for (const sq of activeSquares) {
-      this._pivot!.attach(sq);
+    for (const c of activeCubies) {
+      this._pivot.attach(c);
     }
 
-    this._activeSquares = activeSquares;
+    this._activeCubies = activeCubies;
     this._axis.copy(axis).normalize();
     this._targetAngle = dir === 1 ? RIGHT_ANGLE : -RIGHT_ANGLE;
     this._startTime = performance.now();
@@ -93,16 +85,16 @@ export class Rotator {
   }
 
   private _finish(): void {
-    // Move squares back to parent (attach preserves world transform).
-    for (const sq of this._activeSquares) {
-      this.parentGroup.attach(sq);
+    // Move cubies back to parent (attach preserves world transform).
+    for (const c of this._activeCubies) {
+      this.parentGroup.attach(c);
     }
 
     // Remove pivot
     this.parentGroup.remove(this._pivot!);
     this._pivot = null;
 
-    this._activeSquares = [];
+    this._activeCubies = [];
     this._rotating = false;
 
     // The caller's onComplete commits the exact state via the model
@@ -112,8 +104,6 @@ export class Rotator {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-
-export function hitToFace(square: SquareMesh): { normal: THREE.Vector3; dir: 1 | -1 } {
-  return { normal: square.element.normal.clone(), dir: 1 };
+export function hitToFace(sticker: { normal: THREE.Vector3 }): { normal: THREE.Vector3; dir: 1 | -1 } {
+  return { normal: sticker.normal.clone(), dir: 1 };
 }

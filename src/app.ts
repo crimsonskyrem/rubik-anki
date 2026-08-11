@@ -62,7 +62,7 @@ function axisVec(base: MoveBase): THREE.Vector3 {
 export function initApp(): void {
   container = document.getElementById('cube-container')!;
   renderer = new SquareRenderer(container);
-  rotator = new Rotator(renderer.squares);
+  rotator = new Rotator(renderer.cubies);
 
   // Establish the invariant: displayed cube === state.
   renderer.sync(state);
