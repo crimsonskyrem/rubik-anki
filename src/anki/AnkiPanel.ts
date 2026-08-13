@@ -1,10 +1,12 @@
 import type { Formula } from '../cfop/types';
 import { algorithmsOf } from '../cfop/data';
 import { parseAlgorithm, type Move, type MoveBase, type MoveDir } from '../cube/algorithm';
+import { loadSchedule, markLearned, setDaily, resetSchedule, dueCards, todayStr, type Schedule } from './schedule';
 
 // ═══ Types ═══
 
 type Category = 'f2l' | 'oll' | 'pll';
+type Phase = 'settings' | 'scheduled' | 'free' | 'done';
 
 export interface AnkiHandlers {
   onPickFormula: (formula: Formula) => void;
@@ -115,6 +117,15 @@ function pickRandom(formulas: Formula[], pools: Category[]): Formula {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 function categoryBadge(cat: Formula['category']): string {
   const map: Record<string, string> = { cross: '十字', f2l: 'F2L', oll: 'OLL', pll: 'PLL' };
   return map[cat] ?? cat;
@@ -134,6 +145,11 @@ export function buildAnkiPanel(
 ): void {
   const { onPickFormula, onCorrectMove, onComplete, onExit, isSessionDirty } = handlers;
   let selectedPools = loadPools();
+  let phase: Phase = selectedPools.length > 0 ? 'scheduled' : 'settings';
+  /** Today's queue (regenerated on each entry; not persisted). */
+  let queue: Formula[] = [];
+  let doneCount = 0;
+  let totalCount = 0;
   let currentFormula: Formula | null = null;
   /** All candidate algorithms for the current formula, each expanded to single turns. */
   let candidates: Move[][] = [];
@@ -151,8 +167,12 @@ export function buildAnkiPanel(
     if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
     countdownActive = false;
     container.innerHTML = '';
-    if (selectedPools.length === 0) {
-      renderPoolSelector();
+    if (phase === 'settings') {
+      renderSettings();
+    } else if (phase === 'done') {
+      renderDone();
+    } else if (phase === 'scheduled' && !currentFormula) {
+      startScheduled();
     } else {
       renderPractice();
     }
@@ -163,14 +183,55 @@ export function buildAnkiPanel(
     return candidates.some((c) => c.length === userMoves.length && isPrefix(userMoves, c));
   }
 
-  // ═══ Pool Selector ═══
+  // ═══ Queue building ═══
 
-  function renderPoolSelector(): void {
+  /** Due reviews (oldest due first) + random new formulas filling remaining slots (max 2). */
+  /** Due reviews (oldest due first) + random new formulas filling remaining slots (max floor(daily/2), at least 1). */
+  function buildQueue(sched: Schedule): Formula[] {
+    const today = todayStr();
+    const due = dueCards(sched.cards, today)
+      .map((id) => formulas.find((f) => f.id === id))
+      .filter((f): f is Formula => !!f && selectedPools.includes(f.category as Category))
+      .sort((a, b) => sched.cards[a.id].due.localeCompare(sched.cards[b.id].due));
+    const newCount = Math.min(Math.max(1, Math.floor(sched.daily / 2)), Math.max(0, sched.daily - due.length));
+    const learned = new Set(Object.keys(sched.cards));
+    const freshPool = formulas.filter((f) => selectedPools.includes(f.category as Category) && !learned.has(f.id));
+    return [...due, ...shuffle(freshPool).slice(0, newCount)];
+  }
+
+  function startScheduled(): void {
+    const sched = loadSchedule();
+    queue = buildQueue(sched);
+    totalCount = queue.length;
+    doneCount = 0;
+    phase = 'scheduled';
+    if (queue.length === 0) {
+      phase = 'done';
+      render();
+      return;
+    }
+    beginRound(queue.shift()!);
+  }
+
+  /** Advance to the next queued card; when exhausted, show the done screen. */
+  function nextCard(): void {
+    if (queue.length === 0) {
+      phase = 'done';
+      render();
+      return;
+    }
+    beginRound(queue.shift()!);
+  }
+
+  // ═══ Settings ═══
+
+  function renderSettings(): void {
+    const sched = loadSchedule();
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'display: flex; flex-direction: column; gap: 16px; padding: 8px 0;';
+    wrapper.style.cssText = 'display: flex; flex-direction: column; gap: 16px; padding: 8px 0; overflow-y: auto;';
 
     const title = document.createElement('h3');
-    title.textContent = '选择公式池';
+    title.textContent = 'Anki 设置';
     title.style.cssText = 'text-align: center; font-size: 16px; margin: 0;';
     wrapper.appendChild(title);
 
@@ -196,6 +257,43 @@ export function buildAnkiPanel(
       checkboxes[pool] = cb;
     }
 
+    // Daily count
+    const dailyRow = document.createElement('label');
+    dailyRow.style.cssText = `
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px; background: #0f3460; border-radius: 8px; font-size: 14px;
+    `;
+    const dailyLabel = document.createElement('span');
+    dailyLabel.textContent = '每日公式数';
+    const dailyInput = document.createElement('input');
+    dailyInput.type = 'number';
+    dailyInput.min = '1';
+    dailyInput.max = '20';
+    dailyInput.value = String(sched.daily);
+    dailyInput.style.cssText = `
+      width: 64px; padding: 6px 8px; border: none; border-radius: 6px;
+      background: #1a1a2e; color: #e0e0e0; font-size: 14px; text-align: center;
+    `;
+    dailyRow.appendChild(dailyLabel);
+    dailyRow.appendChild(dailyInput);
+    wrapper.appendChild(dailyRow);
+
+    // Reset
+    const resetBtn = document.createElement('button');
+    resetBtn.textContent = '重置记忆进度';
+    resetBtn.style.cssText = `
+      padding: 10px; border: none; border-radius: 8px; cursor: pointer;
+      font-size: 13px; background: #3a1a2e; color: #e94560;
+    `;
+    resetBtn.addEventListener('click', () => {
+      if (!window.confirm('确定重置所有公式的记忆进度？所有公式将视为未学习。')) return;
+      resetSchedule();
+      resetBtn.textContent = '已重置 ✓';
+      setTimeout(() => { resetBtn.textContent = '重置记忆进度'; }, 1500);
+    });
+    wrapper.appendChild(resetBtn);
+
+    // Start
     const startBtn = document.createElement('button');
     startBtn.textContent = '开始练习';
     startBtn.style.cssText = `
@@ -208,7 +306,8 @@ export function buildAnkiPanel(
       if (selected.length === 0) return;
       selectedPools = selected;
       savePools(selectedPools);
-      startRound();
+      setDaily(Number(dailyInput.value));
+      startScheduled();
     });
     wrapper.appendChild(startBtn);
 
@@ -229,6 +328,7 @@ export function buildAnkiPanel(
     render();
   }
 
+  /** Free practice: random formula, no scheduling. */
   function startRound(): void {
     beginRound(pickRandom(formulas, selectedPools));
   }
@@ -258,19 +358,26 @@ export function buildAnkiPanel(
     formulaName.style.cssText = 'font-size: 13px; color: #aaa; flex: 1;';
     topBar.appendChild(formulaName);
 
+    // Daily progress (scheduled mode only)
+    if (phase === 'scheduled') {
+      const progress = document.createElement('span');
+      progress.textContent = `${doneCount}/${totalCount}`;
+      progress.title = '今日已完成';
+      progress.style.cssText = 'font-size: 12px; color: #4caf50; font-weight: 600; flex-shrink: 0;';
+      topBar.appendChild(progress);
+    }
+
     // Settings gear
     const gearBtn = document.createElement('button');
     gearBtn.textContent = '⚙';
-    gearBtn.title = '修改公式池';
+    gearBtn.title = '设置';
     gearBtn.style.cssText = `
       width: 32px; height: 32px; border: none; border-radius: 6px;
       cursor: pointer; font-size: 16px; background: #0f3460; color: #aaa;
       display: flex; align-items: center; justify-content: center;
     `;
     gearBtn.addEventListener('click', () => {
-      selectedPools = [];
-      currentFormula = null;
-      savePools([]);
+      phase = 'settings';
       render();
     });
     topBar.appendChild(gearBtn);
@@ -321,6 +428,12 @@ export function buildAnkiPanel(
         line.style.cssText = `color: ${i === 0 ? '#ff9800' : '#ffd180'};`;
         reveal.appendChild(line);
       });
+      if (phase === 'scheduled') {
+        const hint = document.createElement('div');
+        hint.textContent = '该公式稍后会再次出现';
+        hint.style.cssText = 'color: #e94560; font-family: sans-serif; font-size: 12px;';
+        reveal.appendChild(hint);
+      }
       container.appendChild(reveal);
     }
 
@@ -358,6 +471,10 @@ export function buildAnkiPanel(
         cursor: pointer; font-size: 13px; background: #0f3460; color: #aaa;
       `;
       skipBtn.addEventListener('click', () => {
+        if (phase === 'scheduled') {
+          // Failure: re-queue at the end of today's queue (schedule unchanged).
+          queue.push(currentFormula!);
+        }
         skipped = true;
         render();
       });
@@ -372,7 +489,7 @@ export function buildAnkiPanel(
         cursor: pointer; font-size: 14px; font-weight: 600;
         background: #0f3460; color: #aaa;
       `;
-      nextBtn.addEventListener('click', () => startRound());
+      nextBtn.addEventListener('click', () => (phase === 'scheduled' ? nextCard() : startRound()));
       actionRow.appendChild(nextBtn);
     }
 
@@ -388,13 +505,14 @@ export function buildAnkiPanel(
         background: #4caf50; color: #fff;
       `;
 
+      const advance = () => (phase === 'scheduled' ? nextCard() : startRound());
       const tick = () => {
         if (!countdownActive) return;
         const secs = countdownLeft;
         nextBtn.textContent = `✓ 正确！下一题 (${secs})`;
         if (secs <= 0) {
           countdownActive = false;
-          startRound();
+          advance();
           return;
         }
         countdownLeft = secs - 1;
@@ -414,11 +532,63 @@ export function buildAnkiPanel(
           nextBtn.style.background = '#0f3460';
           nextBtn.style.color = '#aaa';
         } else {
-          startRound();
+          advance();
         }
       });
       actionRow.appendChild(nextBtn);
     }
+  }
+
+  // ═══ Done ═══
+
+  function renderDone(): void {
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display: flex; flex-direction: column; gap: 12px; padding: 24px 8px;';
+
+    const title = document.createElement('h3');
+    title.textContent = '今日已完成 ✓';
+    title.style.cssText = 'text-align: center; font-size: 18px; margin: 0; color: #4caf50;';
+    wrapper.appendChild(title);
+
+    const sub = document.createElement('div');
+    sub.textContent = totalCount > 0 ? `完成 ${doneCount}/${totalCount} 张` : '今日没有待复习的公式';
+    sub.style.cssText = 'text-align: center; font-size: 14px; color: #aaa;';
+    wrapper.appendChild(sub);
+
+    const freeBtn = document.createElement('button');
+    freeBtn.textContent = '继续自由练习';
+    freeBtn.style.cssText = `
+      padding: 12px; border: none; border-radius: 8px; cursor: pointer;
+      font-size: 15px; font-weight: 600; background: #e94560; color: #fff;
+    `;
+    freeBtn.addEventListener('click', () => {
+      phase = 'free';
+      startRound();
+    });
+    wrapper.appendChild(freeBtn);
+
+    const exitBtn = document.createElement('button');
+    exitBtn.textContent = '退出';
+    exitBtn.style.cssText = `
+      padding: 10px; border: none; border-radius: 8px; cursor: pointer;
+      font-size: 13px; background: #0f3460; color: #aaa;
+    `;
+    exitBtn.addEventListener('click', () => onExit());
+    wrapper.appendChild(exitBtn);
+
+    const gearBtn = document.createElement('button');
+    gearBtn.textContent = '⚙ 设置';
+    gearBtn.style.cssText = `
+      padding: 10px; border: none; border-radius: 8px; cursor: pointer;
+      font-size: 13px; background: #0f3460; color: #aaa;
+    `;
+    gearBtn.addEventListener('click', () => {
+      phase = 'settings';
+      render();
+    });
+    wrapper.appendChild(gearBtn);
+
+    container.appendChild(wrapper);
   }
 
   // ═══ Move input ═══
@@ -443,6 +613,15 @@ export function buildAnkiPanel(
       onCorrectMove(input);
       if (isComplete()) {
         onComplete();
+        if (phase === 'scheduled') {
+          doneCount++;
+          markLearned(currentFormula!.id);
+          if (queue.length === 0) {
+            phase = 'done';
+            render();
+            return;
+          }
+        }
       }
       render();
     } else {
