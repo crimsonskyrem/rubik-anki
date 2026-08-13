@@ -1,11 +1,8 @@
 import * as THREE from 'three';
 
-const BASE_DIR = new THREE.Vector3(5, 4.5, 6).normalize();
-const BASE_RADIUS = new THREE.Vector3(5, 4.5, 6).length(); // ≈ 8.9
-
 /**
  * Drag rotates the CUBE (not the camera); mirrors stay fixed in world space.
- * Scroll zooms the camera along its fixed view direction.
+ * Camera position is fixed (no zoom) so mirror edges stay off-screen.
  * Distinguishes click from drag via movement threshold.
  */
 export class OrbitController {
@@ -17,9 +14,9 @@ export class OrbitController {
   private startY = 0;
   private lastX = 0;
   private lastY = 0;
-  private radius = BASE_RADIUS;
   private onClickCallback: ((e: MouseEvent) => void) | null = null;
   private _enabled = true;
+
 
   private static readonly CLICK_THRESHOLD = 3; // px — max movement to count as click
   private static readonly Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -52,14 +49,8 @@ export class OrbitController {
       const fakeEvent = { clientX: this.lastX, clientY: this.lastY } as MouseEvent;
       this._onPointerUp(fakeEvent);
     });
-
-    canvas.addEventListener('wheel', (e: WheelEvent) => {
-      if (!this._enabled) return;
-      e.preventDefault();
-      this.radius = Math.max(4, Math.min(20, this.radius + e.deltaY * 0.01));
-      this._updateCamera();
-    }, { passive: false });
   }
+
 
   /** Register a callback for clicks (not drags) on the canvas */
   onClick(cb: (e: MouseEvent) => void): void {
@@ -71,7 +62,7 @@ export class OrbitController {
     this.cubeGroup.quaternion.identity();
   }
 
-  /** Enable or disable drag/zoom. */
+  /** Enable or disable drag/click (zoom is always disabled). */
   setEnabled(enabled: boolean): void {
     this._enabled = enabled;
   }
@@ -79,6 +70,9 @@ export class OrbitController {
   get enabled(): boolean {
     return this._enabled;
   }
+
+
+
 
   private _onPointerDown(e: MouseEvent | Touch): void {
     if (!this._enabled) return;
@@ -122,8 +116,4 @@ export class OrbitController {
     this.isClick = false;
   }
 
-  private _updateCamera(): void {
-    this.camera.position.copy(BASE_DIR.clone().multiplyScalar(this.radius));
-    this.camera.lookAt(0, 0, 0);
-  }
 }

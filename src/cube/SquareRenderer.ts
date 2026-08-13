@@ -37,7 +37,7 @@ export class SquareRenderer {
       0.1,
       100,
     );
-    this.camera.position.set(5, 4.5, 6);
+    this.camera.position.set(6.5, 5.85, 7.8);
     this.camera.lookAt(0, 0, 0);
     this.camera.layers.enable(SquareRenderer.MIRROR_LAYER);
 
@@ -57,10 +57,11 @@ export class SquareRenderer {
     this.scene.add(dir2);
 
     // Fixed mirrors (world space): left (L), back (B), bottom (D).
-    // 10×10 so edges are off-screen; at distance 3.0 the cube (max radius
+    // 40×40 so edges are always off-screen from the locked camera (worst case
+    // 32:9 view needs half-size ~20); at distance 3.0 the cube (max radius
     // 2.6 when rotated) never intersects them.
     const addMirror = (pos: [number, number, number], rot: [number, number, number] | null): void => {
-      const mirror = new Reflector(new THREE.PlaneGeometry(10, 10), {
+      const mirror = new Reflector(new THREE.PlaneGeometry(40, 40), {
         clipBias: 0.003,
         textureWidth: 512,
         textureHeight: 512,

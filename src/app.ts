@@ -71,10 +71,11 @@ export function initApp(): void {
   controller.bindCanvas(renderer.renderer.domElement);
   controller.onClick((e: MouseEvent) => handleClick(e));
 
-  // Reset/lock button (icon style, bottom-right of cube-container)
+  // Reset/lock button: click to reset cube orientation; click again to lock
+  // drag/click (zoom is permanently disabled, camera fixed).
   const resetBtn = document.createElement('button');
   resetBtn.textContent = '⟳';
-  resetBtn.title = '点击重置魔方，再次点击锁定';
+  resetBtn.title = '点击重置魔方朝向，再次点击锁定';
   resetBtn.style.cssText = `
     position: absolute; bottom: 16px; right: 16px; z-index: 10;
     width: 40px; height: 40px; border: none; border-radius: 50%;
@@ -99,7 +100,7 @@ export function initApp(): void {
       btnState = 0;
       controller.setEnabled(true);
       controller.reset();
-      setBtnStyle('rgba(15, 52, 96, 0.7)', '#aaa', '点击重置魔方，再次点击锁定');
+      setBtnStyle('rgba(15, 52, 96, 0.7)', '#aaa', '点击重置魔方朝向，再次点击锁定');
     } else if (btnState === 1) {
       // Reset pending → lock
       clearTimeout(pendingTimer!);
@@ -116,11 +117,13 @@ export function initApp(): void {
       pendingTimer = setTimeout(() => {
         pendingTimer = null;
         btnState = 0;
-        setBtnStyle('rgba(15, 52, 96, 0.7)', '#aaa', '点击重置魔方，再次点击锁定');
+        setBtnStyle('rgba(15, 52, 96, 0.7)', '#aaa', '点击重置魔方朝向，再次点击锁定');
       }, 1000);
     }
   });
   container.appendChild(resetBtn);
+
+
 
   // Anki mode button
   const ankiBtn = document.createElement('button');
