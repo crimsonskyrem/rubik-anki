@@ -1,7 +1,7 @@
 import type { Formula } from '../cfop/types';
 import { algorithmsOf } from '../cfop/data';
 import { parseAlgorithm, type Move, type MoveBase, type MoveDir } from '../cube/algorithm';
-import { loadSchedule, markLearned, setDaily, resetSchedule, dueCards, todayStr, type Schedule } from './schedule';
+import { loadSchedule, markLearned, markDone, setDaily, resetSchedule, dueCards, todayStr, type Schedule } from './schedule';
 
 // ═══ Types ═══
 
@@ -145,7 +145,9 @@ export function buildAnkiPanel(
 ): void {
   const { onPickFormula, onCorrectMove, onComplete, onExit, isSessionDirty } = handlers;
   let selectedPools = loadPools();
-  let phase: Phase = selectedPools.length > 0 ? 'scheduled' : 'settings';
+  let phase: Phase = selectedPools.length > 0
+    ? (loadSchedule().lastDone === todayStr() ? 'free' : 'scheduled')
+    : 'settings';
   /** Today's queue (regenerated on each entry; not persisted). */
   let queue: Formula[] = [];
   let doneCount = 0;
@@ -207,6 +209,7 @@ export function buildAnkiPanel(
     phase = 'scheduled';
     if (queue.length === 0) {
       phase = 'done';
+      markDone();
       render();
       return;
     }
@@ -217,6 +220,7 @@ export function buildAnkiPanel(
   function nextCard(): void {
     if (queue.length === 0) {
       phase = 'done';
+      markDone();
       render();
       return;
     }
@@ -618,6 +622,7 @@ export function buildAnkiPanel(
           markLearned(currentFormula!.id);
           if (queue.length === 0) {
             phase = 'done';
+            markDone();
             render();
             return;
           }

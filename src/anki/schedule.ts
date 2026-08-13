@@ -13,7 +13,10 @@ export interface Schedule {
   /** Daily workload cap (1..20). */
   daily: number;
   cards: Record<string, CardState>;
+  /** Date (YYYY-MM-DD) when today's scheduled queue was completed; '' = not done today. */
+  lastDone: string;
 }
+
 
 export const LADDER = [1, 2, 4, 7, 15, 30];
 const MAX_STEP = LADDER.length - 1;
@@ -34,9 +37,10 @@ export function addDays(dateStr: string, days: number): string {
 export function loadSchedule(): Schedule {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { daily: DEFAULT_DAILY, cards: {} };
+    if (!raw) return { daily: DEFAULT_DAILY, cards: {}, lastDone: '' };
     const p = JSON.parse(raw);
     const daily = typeof p.daily === 'number' && p.daily >= 1 && p.daily <= 20 ? p.daily : DEFAULT_DAILY;
+    const lastDone = typeof p.lastDone === 'string' ? p.lastDone : '';
     const cards: Record<string, CardState> = {};
     if (p.cards && typeof p.cards === 'object') {
       for (const [id, c] of Object.entries(p.cards)) {
@@ -44,9 +48,10 @@ export function loadSchedule(): Schedule {
         if (typeof card?.step === 'number' && typeof card?.due === 'string') cards[id] = card;
       }
     }
-    return { daily, cards };
+    return { daily, cards, lastDone };
   } catch {
-    return { daily: DEFAULT_DAILY, cards: {} };
+    return { daily: DEFAULT_DAILY, cards: {}, lastDone: '' };
+
   }
 }
 
@@ -68,18 +73,28 @@ export function markLearned(id: string): void {
   saveSchedule(s);
 }
 
+/** Record that today's scheduled queue was completed. */
+export function markDone(): void {
+  const s = loadSchedule();
+  s.lastDone = todayStr();
+  saveSchedule(s);
+}
+
 export function setDaily(n: number): void {
   const s = loadSchedule();
   s.daily = Math.min(20, Math.max(1, Math.round(n)));
   saveSchedule(s);
 }
 
+
 /** Clear all memory state (formulas become "new" again); keep daily setting. */
 export function resetSchedule(): void {
   const s = loadSchedule();
   s.cards = {};
+  s.lastDone = '';
   saveSchedule(s);
 }
+
 
 /** Ids of cards due on or before `today`. */
 export function dueCards(cards: Record<string, CardState>, today: string = todayStr()): string[] {
