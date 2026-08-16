@@ -31,6 +31,12 @@ let currentAlgIndex = 0;
 let manualTurn = false;
 /** Auto-play toggle. ON: animate the full solve after snapping. OFF: step manually. */
 let autoPlay = false;
+/** Push browse-panel progress (moves completed) so the algorithm display colors steps. */
+let progressListener: ((played: number) => void) | null = null;
+let movesPlayed = 0;
+/** Auto-play: pause between consecutive moves (ms). */
+const STEP_GAP_MS = 500;
+let nextMoveAt = 0;
 
 /** App mode: browse (original) or anki (memory practice). */
 let appMode: 'browse' | 'anki' = 'browse';
@@ -174,11 +180,12 @@ export function initApp(): void {
   function buildPanel(): void {
     panelContent.innerHTML = '';
     if (appMode === 'browse') {
-      buildFormulaPanel(panelContent, formulas, {
+      const panel = buildFormulaPanel(panelContent, formulas, {
         onSelect: (formula: Formula, algIndex: number) => applyFormula(formula, algIndex),
         onToggleAutoPlay: (next: boolean) => { autoPlay = next; },
         onStep: () => step(),
       });
+      progressListener = (played) => panel.setProgress(played);
     } else {
       const ankiHandlers: AnkiHandlers = {
         onPickFormula: (formula: Formula) => {
@@ -207,6 +214,7 @@ export function initApp(): void {
         isSessionDirty: () => manualTurn,
       };
       buildAnkiPanel(panelContent, formulas, ankiHandlers);
+      progressListener = null;
     }
   }
   buildPanel();
@@ -250,18 +258,22 @@ function handleClick(e: MouseEvent): void {
 /** Play one queued move (animate + commit to model). No-op if rotating or queue empty. */
 function playNextMove(): void {
   if (rotator.isRotating || moveQueue.length === 0) return;
+  if (autoPlay && performance.now() < nextMoveAt) return; // pause between steps
   const q = moveQueue.shift()!;
   rotator.startRotation(q.axis, q.layers, q.move.dir, () => {
+    nextMoveAt = performance.now() + STEP_GAP_MS;
     // Commit the move to the model, then sync the view (exact, drift-free).
     state = applyMove(state, q.move);
     renderer.sync(state);
-    // After each move: if queue empty & pending formula, apply it (browse mode only)
+    movesPlayed++;
     if (moveQueue.length === 0 && pendingFormula && !ankiActive) {
       const f = pendingFormula;
       const idx = pendingAlgIndex;
       pendingFormula = null;
       pendingAlgIndex = 0;
-      applyFormulaNow(f, idx);
+      applyFormulaNow(f, idx); // resets movesPlayed and notifies progress
+    } else {
+      progressListener?.(movesPlayed);
     }
   });
 }
@@ -311,4 +323,7 @@ function applyFormulaNow(formula: Formula, algIndex = 0): void {
   for (const move of parseAlgorithm(alg)) {
     enqueueMove(move);
   }
+  movesPlayed = 0;
+  progressListener?.(0);
+  nextMoveAt = 0; // new formula: first move starts immediately
 }

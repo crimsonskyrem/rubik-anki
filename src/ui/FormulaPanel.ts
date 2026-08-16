@@ -1,6 +1,18 @@
 import type { Formula } from '../cfop/types';
 import { algorithmsOf } from '../cfop/data';
+import { parseAlgorithm } from '../cube/algorithm';
 
+export interface AlgToken { label: string; played: boolean }
+
+/** Per-token play state: a token is "played" once all its quarter-turns are done (dir 2 needs two). */
+export function tokenStates(alg: string, played: number): AlgToken[] {
+  let cum = 0;
+  return parseAlgorithm(alg).map((m) => {
+    cum += m.dir === 2 ? 2 : 1;
+    const suffix = m.dir === -1 ? "'" : m.dir === 2 ? '2' : '';
+    return { label: m.base + suffix, played: cum <= played };
+  });
+}
 /** Callbacks the panel fires into the app. */
 export interface PanelHandlers {
   /** A formula (and which algorithm index) was selected: snap to its pattern (and auto-play if enabled). */
@@ -18,11 +30,15 @@ export interface PanelHandlers {
  * (auto-play toggle + clickable algorithm display), optional algorithm
  * variant selector, formula list.
  */
+export interface FormulaPanelHandle {
+  /** Re-render the algorithm display with `played` completed moves. */
+  setProgress(played: number): void;
+}
 export function buildFormulaPanel(
   container: HTMLElement,
   formulas: Formula[],
   handlers: PanelHandlers,
-): void {
+): FormulaPanelHandle {
   const { onSelect, onToggleAutoPlay, onStep } = handlers;
 
   const categories: Array<{ key: Formula['category']; label: string }> = [
@@ -36,7 +52,8 @@ export function buildFormulaPanel(
   let autoPlay = false;
   let currentFormula: Formula | null = null;
   let currentAlgIndex = 0;
-
+  /** Moves completed for the current formula (pushed by the app after each step). */
+  let playedSteps = 0;
   // Container flex layout: header fixed, list scrolls
   container.style.display = 'flex';
   container.style.flexDirection = 'column';
@@ -79,12 +96,11 @@ export function buildFormulaPanel(
 
   // Algorithm display (clickable: advances one step in manual mode)
   const algDisplay = document.createElement('div');
-  algDisplay.id = 'algorithm-display';
   algDisplay.style.cssText = `
     flex: 1; padding: 10px 12px; background: #0f3460; border-radius: 6px;
     font-family: monospace; font-size: 15px; text-align: center; min-height: 44px;
     cursor: pointer; transition: background 0.15s;
-    display: flex; align-items: center; justify-content: center;
+    display: flex; align-items: center; overflow-x: auto;
   `;
   algDisplay.textContent = '选择一个公式开始';
   algDisplay.addEventListener('click', () => onStep());
@@ -111,7 +127,18 @@ export function buildFormulaPanel(
       algDisplay.textContent = '选择一个公式开始';
       return;
     }
-    algDisplay.textContent = alg;
+    algDisplay.innerHTML = '';
+    // Inner wrapper: margin auto keeps short formulas centered, long ones scroll from the left.
+    const inner = document.createElement('div');
+    inner.style.cssText = 'display: flex; align-items: center; margin: 0 auto;';
+    for (const t of tokenStates(alg, playedSteps)) {
+      const span = document.createElement('span');
+      span.textContent = t.label;
+      span.style.margin = '0 4px';
+      if (t.played) span.style.color = '#4caf50';
+      inner.appendChild(span);
+    }
+    algDisplay.appendChild(inner);
   }
 
   function renderVariants(): void {
@@ -223,4 +250,9 @@ export function buildFormulaPanel(
 
   renderTabs();
   renderList();
+
+  return {
+    /** Re-render the algorithm display with `played` completed moves. */
+    setProgress(played: number): void { playedSteps = played; updateAlgDisplay(); },
+  };
 }

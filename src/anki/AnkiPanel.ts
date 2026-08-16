@@ -136,6 +136,28 @@ function moveLabel(m: Move): string {
   return m.base + suffix;
 }
 
+/**
+ * Next playback position after clicking a revealed answer line `i`.
+ * `restart` means the cube must be re-scrambled (onPickFormula) first.
+ */
+export function nextPlayback(
+  currentIndex: number | null,
+  currentSteps: number,
+  i: number,
+  userMoves: Move[],
+  expanded: Move[],
+  dirty: boolean,
+): { index: number; restart: boolean } {
+  if (currentIndex === null) {
+    // First click after reveal: continue from the user's position when the cube is still on it.
+    const idx = !dirty && isPrefix(userMoves, expanded) ? userMoves.length : 0;
+    return { index: idx, restart: idx === 0 };
+  }
+  if (currentIndex !== i) return { index: 0, restart: true }; // switched algorithm
+  if (currentSteps >= expanded.length) return { index: 0, restart: true }; // finished: replay
+  if (dirty) return { index: 0, restart: true }; // cube manually rotated mid-playback
+  return { index: currentSteps, restart: false };
+}
 // ═══ Builder ═══
 
 export function buildAnkiPanel(
@@ -160,6 +182,9 @@ export function buildAnkiPanel(
   let skipped = false;
   let autoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
   let countdownActive = false;
+  /** Answer playback after 显示答案: which algorithm line is playing and how many steps were played. */
+  let playbackAlgIndex: number | null = null;
+  let playbackIndex = 0;
 
   container.style.display = 'flex';
   container.style.flexDirection = 'column';
@@ -328,6 +353,8 @@ export function buildAnkiPanel(
     userMoves = [];
     skipped = false;
     countdownActive = false;
+    playbackAlgIndex = null;
+    playbackIndex = 0;
     onPickFormula(f);
     render();
   }
@@ -337,6 +364,21 @@ export function buildAnkiPanel(
     beginRound(pickRandom(formulas, selectedPools));
   }
 
+  /** Click a revealed answer line to play its algorithm one step at a time. */
+  function playAnswerStep(i: number): void {
+    const f = currentFormula!;
+    const expanded = expandToSingles(algorithmsOf(f)[i]);
+    const { index, restart } = nextPlayback(
+      playbackAlgIndex, playbackIndex, i, userMoves, expanded, isSessionDirty(),
+    );
+    playbackAlgIndex = i;
+    playbackIndex = index;
+    if (restart) onPickFormula(f);
+    if (playbackIndex >= expanded.length) return;
+    onCorrectMove(expanded[playbackIndex]);
+    playbackIndex++;
+    render();
+  }
   function renderPractice(): void {
     if (!currentFormula) {
       startRound();
@@ -418,7 +460,7 @@ export function buildAnkiPanel(
     }
     container.appendChild(progress);
 
-    // Revealed formulas (only when skipped): show primary + alternatives.
+    // Revealed formulas (only when skipped): click a line to play its steps one by one.
     if (skipped) {
       const reveal = document.createElement('div');
       reveal.style.cssText = `
@@ -428,8 +470,27 @@ export function buildAnkiPanel(
       `;
       algorithmsOf(currentFormula).forEach((alg, i) => {
         const line = document.createElement('div');
-        line.textContent = `${i === 0 ? '主' : '变' + i}: ${alg}`;
-        line.style.cssText = `color: ${i === 0 ? '#ff9800' : '#ffd180'};`;
+        const label = i === 0 ? '主' : `变${i}`;
+        line.title = '点击播放下一步';
+        line.style.cssText = `
+          color: ${i === 0 ? '#ff9800' : '#ffd180'};
+          cursor: pointer; border-radius: 4px; padding: 2px 4px; margin: -2px -4px;
+          transition: background 0.15s;
+        `;
+        line.addEventListener('mouseenter', () => { line.style.background = '#162d50'; });
+        line.addEventListener('mouseleave', () => { line.style.background = 'transparent'; });
+        if (i === playbackAlgIndex) {
+          // Active playback line: played steps green.
+          expandToSingles(alg).forEach((m, j) => {
+            const span = document.createElement('span');
+            span.textContent = (j === 0 ? `${label}: ` : '') + moveLabel(m) + ' ';
+            span.style.color = j < playbackIndex ? '#4caf50' : 'inherit';
+            line.appendChild(span);
+          });
+        } else {
+          line.textContent = `${label}: ${alg}`;
+        }
+        line.addEventListener('click', () => playAnswerStep(i));
         reveal.appendChild(line);
       });
       if (phase === 'scheduled') {
